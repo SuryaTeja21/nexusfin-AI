@@ -1,0 +1,40 @@
+name: "User Story"
+description: "Define a feature or requirement using standard Agile User Story & Gherkin syntax"
+title: "[STORY]: "
+labels: ["user-story", "agile"]
+body:
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User Story
+      description: Follow the format 'As a [role], I want [capability] so that [business value]'
+      value: |
+        **As a** [FinTech API consumer / Ledger Auditor]
+        **I want** [to execute balanced double-entry transactions]
+        **So that** [the platform maintains strict GAAP/IFRS financial accounting integrity]
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria (Gherkin Syntax)
+      value: |
+        ```gherkin
+        Scenario: Balanced Multi-Leg Posting
+          Given an asset account with balance 5000 USD
+          And a liability account with balance 2000 USD
+          When a transaction is posted with 500 USD debit and 500 USD credit
+          Then both balances update atomically
+          And sum of debits equals sum of credits
+        ```
+    validations:
+      required: true
+  - type: checkboxes
+    id: dod
+    attributes:
+      label: Definition of Done
+      options:
+        - label: Double-entry invariant validated
+        - label: Flyway database migration created (if applicable)
+        - label: Virtual threads compatibility verified (no carrier thread pinning)
+        - label: Unit tests written with >= 80% coverage
