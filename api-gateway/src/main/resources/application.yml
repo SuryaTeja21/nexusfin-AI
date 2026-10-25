@@ -1,0 +1,67 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        # Route: Core Ledger Service (ACID Ledger & Accounts)
+        - id: ledger-service-accounts
+          uri: lb://ledger-service
+          predicates:
+            - Path=/api/v1/accounts/**
+          filters:
+            - StripPrefix=0
+
+        - id: ledger-service-transactions
+          uri: lb://ledger-service
+          predicates:
+            - Path=/api/v1/ledger/**
+          filters:
+            - StripPrefix=0
+
+        # Route: AI Fraud & Audit Service
+        - id: ai-fraud-service
+          uri: lb://ai-fraud-service
+          predicates:
+            - Path=/api/v1/fraud/**
+          filters:
+            - StripPrefix=0
+
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    registry-fetch-interval-seconds: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+  endpoint:
+    health:
+      show-details: always

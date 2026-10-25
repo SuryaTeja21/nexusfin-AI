@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL 16 for Core ACID Double-Entry Ledger
+  postgres-ledger:
+    image: postgres:16-alpine
+    container_name: nexusfin-postgres-ledger
+    environment:
+      POSTGRES_DB: nexusfin_ledger
+      POSTGRES_USER: nexusfin
+      POSTGRES_PASSWORD: nexusfin_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_ledger_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexusfin -d nexusfin_ledger"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. PostgreSQL with PGVector extension for Semantic AI Fraud & Audit Vectors
+  postgres-vector:
+    image: pgvector/pgvector:pg16
+    container_name: nexusfin-postgres-vector
+    environment:
+      POSTGRES_DB: nexusfin_vector
+      POSTGRES_USER: nexusfin
+      POSTGRES_PASSWORD: nexusfin_secret
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_vector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexusfin -d nexusfin_vector"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 3. Spring Cloud Netflix Eureka Discovery Server
+  discovery-server:
+    build:
+      context: ./discovery-server
+      dockerfile: Dockerfile
+    container_name: nexusfin-discovery-server
+    ports:
+      - "8761:8761"
+    environment:
+      SPRING_APPLICATION_NAME: discovery-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Spring Cloud API Gateway (Port 8080)
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: nexusfin-api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+    environment:
+      EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
+
+  # 5. Core ACID Double-Entry Ledger Service (Port 8081)
+  ledger-service:
+    build:
+      context: ./ledger-service
+      dockerfile: Dockerfile
+    container_name: nexusfin-ledger-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres-ledger:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-ledger:5432/nexusfin_ledger
+      SPRING_DATASOURCE_USERNAME: nexusfin
+      SPRING_DATASOURCE_PASSWORD: nexusfin_secret
+      EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
+
+  # 6. AI Fraud Detection & Audit Intelligence Service (Port 8082)
+  ai-fraud-service:
+    build:
+      context: ./ai-fraud-service
+      dockerfile: Dockerfile
+    container_name: nexusfin-ai-fraud-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      postgres-vector:
+        condition: service_healthy
+    environment:
+      EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-demo-key}
+
+volumes:
+  pg_ledger_data:
+  pg_vector_data:
