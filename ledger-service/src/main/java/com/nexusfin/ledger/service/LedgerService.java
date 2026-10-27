@@ -216,8 +216,10 @@ public class LedgerService {
                 ? EntryType.CREDIT
                 : EntryType.DEBIT;
 
-        // Destination account increases (its normal balance)
-        EntryType destEntryType = destAccount.getAccountType().getNormalBalance();
+        // Destination account receives the opposite entry to strictly enforce double-entry math (Debits == Credits)
+        EntryType destEntryType = sourceEntryType == EntryType.DEBIT
+                ? EntryType.CREDIT
+                : EntryType.DEBIT;
 
         String ref = transactionReference != null && !transactionReference.isBlank()
                 ? transactionReference
