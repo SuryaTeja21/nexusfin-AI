@@ -4,6 +4,15 @@ spring:
   cloud:
     discovery:
       enabled: false
+    gateway:
+      discovery:
+        locator:
+          enabled: false
+      routes:
+        - id: test-accounts-route
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/accounts/**
 
 eureka:
   client:
@@ -13,4 +22,3 @@ nexusfin:
   security:
     enabled: true
     api-key: test-api-key-12345
-

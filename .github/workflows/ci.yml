@@ -31,17 +31,18 @@ jobs:
 
       - name: Compile and Run Unit Tests
         run: |
-          for i in 1 2 3; do
-            echo "=== Maven Build Attempt $i ==="
-            ./mvnw clean test --batch-mode && break || {
-              if [ $i -eq 3 ]; then
-                echo "Maven build failed after 3 attempts."
-                exit 1
-              fi
-              echo "Maven attempt $i failed (likely transient network/502). Retrying in 10 seconds..."
-              sleep 10
-            }
-          done
+          ./mvnw clean test --batch-mode || {
+            echo "## ❌ Maven Test Failures" >> $GITHUB_STEP_SUMMARY
+            find . -name "*.txt" -path "*/surefire-reports/*" | while read -r f; do
+              echo "### Test Output: $f" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+              cat "$f" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "=== $f ==="
+              cat "$f"
+            done
+            exit 1
+          }
 
       - name: Generate JaCoCo Code Coverage Report
         run: ./mvnw jacoco:report --batch-mode
