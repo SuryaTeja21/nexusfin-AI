@@ -80,3 +80,4 @@ Content-Type: application/json
 
 ### 10. Test Gateway Circuit Breaker Fallback Endpoint Directly
 GET http://localhost:8080/fallback/ledger
+

@@ -37,3 +37,4 @@
   },
   "postCreateCommand": "chmod +x mvnw"
 }
+
