@@ -21,6 +21,10 @@ spring:
             - Path=/api/v1/accounts/**
           filters:
             - StripPrefix=0
+            - name: CircuitBreaker
+              args:
+                name: ledgerCircuitBreaker
+                fallbackUri: forward:/fallback/ledger
 
         - id: ledger-service-transactions
           uri: lb://ledger-service
@@ -28,6 +32,10 @@ spring:
             - Path=/api/v1/ledger/**
           filters:
             - StripPrefix=0
+            - name: CircuitBreaker
+              args:
+                name: ledgerCircuitBreaker
+                fallbackUri: forward:/fallback/ledger
 
         # Route: AI Fraud & Audit Service
         - id: ai-fraud-service
@@ -36,6 +44,10 @@ spring:
             - Path=/api/v1/fraud/**
           filters:
             - StripPrefix=0
+            - name: CircuitBreaker
+              args:
+                name: fraudCircuitBreaker
+                fallbackUri: forward:/fallback/fraud
 
       globalcors:
         cors-configurations:
@@ -65,3 +77,26 @@ management:
   endpoint:
     health:
       show-details: always
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      ledgerCircuitBreaker:
+        base-config: default
+      fraudCircuitBreaker:
+        base-config: default
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 5s
+
+nexusfin:
+  security:
+    enabled: ${NEXUSFIN_SECURITY_ENABLED:false}
+    api-key: ${NEXUSFIN_API_KEY:nexusfin-prod-secret-key-2026}
