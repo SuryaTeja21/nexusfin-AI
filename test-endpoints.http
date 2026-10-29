@@ -1,0 +1,82 @@
+### ==============================================================================
+### NexusFin AI - Live API Testing Suite (Click 'Send Request' above each endpoint)
+### ==============================================================================
+
+### 1. Eureka Service Discovery Dashboard
+GET http://localhost:8761
+
+### 2. API Gateway Health Check & Correlation ID
+GET http://localhost:8080/actuator/health
+
+### 3. Swagger UI Documentation (Ledger Service)
+GET http://localhost:8081/swagger-ui.html
+
+### 4. Create an Operating Reserve Account (Asset Account)
+POST http://localhost:8080/api/v1/accounts
+Content-Type: application/json
+
+{
+  "accountNumber": "ACC-ASSET-001",
+  "accountName": "Operating Reserve",
+  "accountType": "ASSET",
+  "currency": "USD",
+  "initialBalance": 5000.00
+}
+
+### 5. Create a Customer Wallet Account (Liability Account)
+POST http://localhost:8080/api/v1/accounts
+Content-Type: application/json
+
+{
+  "accountNumber": "ACC-LIAB-001",
+  "accountName": "Customer Wallet",
+  "accountType": "LIABILITY",
+  "currency": "USD",
+  "initialBalance": 1000.00
+}
+
+### 6. Execute Balanced Double-Entry Transfer (Debits == Credits)
+POST http://localhost:8080/api/v1/ledger/transfers
+Content-Type: application/json
+
+{
+  "sourceAccountNumber": "ACC-ASSET-001",
+  "destinationAccountNumber": "ACC-LIAB-001",
+  "amount": 250.00,
+  "currency": "USD",
+  "idempotencyKey": "KEY-DEMO-001",
+  "transactionReference": "TX-DEMO-001",
+  "description": "Customer account funding transfer"
+}
+
+### 7. Inspect Account Balance After Transfer
+GET http://localhost:8080/api/v1/accounts/number/ACC-ASSET-001
+
+### 8. Test AI Fraud Detection Pipeline (Normal Low-Risk Transaction)
+POST http://localhost:8080/api/v1/fraud/evaluate
+Content-Type: application/json
+
+{
+  "transactionReference": "TX-SAFE-001",
+  "accountNumber": "ACC-ASSET-001",
+  "amount": 45.00,
+  "currency": "USD",
+  "description": "Routine retail coffee purchase",
+  "clientIp": "192.168.1.100"
+}
+
+### 9. Test AI Fraud Detection Pipeline (Suspicious Critical High-Value Transfer)
+POST http://localhost:8080/api/v1/fraud/evaluate
+Content-Type: application/json
+
+{
+  "transactionReference": "TX-SUSPICIOUS-001",
+  "accountNumber": "ACC-ASSET-001",
+  "amount": 2500000.00,
+  "currency": "USD",
+  "description": "High-value offshore wire",
+  "clientIp": "10.0.0.1"
+}
+
+### 10. Test Gateway Circuit Breaker Fallback Endpoint Directly
+GET http://localhost:8080/fallback/ledger

@@ -1,0 +1,39 @@
+{
+  "name": "NexusFin AI - DevContainer & Cloud IDE",
+  "image": "mcr.microsoft.com/devcontainers/java:1-21-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "enableDockerBuildx": true
+    }
+  },
+  "forwardPorts": [8080, 8081, 8082, 8761, 9092],
+  "portsAttributes": {
+    "8080": {
+      "label": "NexusFin API Gateway",
+      "onAutoForward": "notify"
+    },
+    "8081": {
+      "label": "Ledger Service (Swagger UI: /swagger-ui.html)",
+      "onAutoForward": "openBrowser"
+    },
+    "8082": {
+      "label": "AI Fraud Service (Swagger UI: /swagger-ui.html)",
+      "onAutoForward": "notify"
+    },
+    "8761": {
+      "label": "Eureka Service Discovery Dashboard",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "ms-azuretools.vscode-docker",
+        "humao.rest-client"
+      ]
+    }
+  },
+  "postCreateCommand": "chmod +x mvnw"
+}
