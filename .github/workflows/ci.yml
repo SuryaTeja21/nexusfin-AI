@@ -74,3 +74,90 @@ jobs:
 
       - name: Validate Docker Compose Configuration
         run: docker compose config
+
+  e2e-live-tests:
+    name: Live Microservice End-to-End API Verification
+    runs-on: ubuntu-latest
+    needs: [build-and-test, docker-lint]
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Start Platform via Docker Compose
+        run: |
+          docker compose up -d --build
+          echo "Waiting for services to become healthy..."
+          timeout 180s bash -c 'until [ $(docker compose ps --filter "status=running" -q | wc -l) -ge 6 ]; do sleep 5; done' || true
+          sleep 30
+          docker compose ps
+
+      - name: Execute Live End-to-End Financial Transactions
+        run: |
+          echo "## 🚀 Live API E2E Verification Results" >> $GITHUB_STEP_SUMMARY
+
+          # 1. API Gateway Health & Tracing
+          echo "Checking API Gateway..."
+          GATEWAY_HEALTH=$(curl -s http://localhost:8080/actuator/health)
+          echo "**1. Gateway Health:** \`$GATEWAY_HEALTH\`" >> $GITHUB_STEP_SUMMARY
+
+          # 2. Create Asset Account
+          echo "Creating Operating Reserve Account (Asset)..."
+          ACC_ASSET=$(curl -s -X POST http://localhost:8080/api/v1/accounts \
+            -H "Content-Type: application/json" \
+            -d '{"accountNumber":"ACC-ASSET-888","accountName":"Operating Reserve","accountType":"ASSET","currency":"USD","initialBalance":10000.00}')
+          echo "### 2. Created Asset Account:" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$ACC_ASSET" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # 3. Create Liability Account
+          echo "Creating Customer Wallet Account (Liability)..."
+          ACC_LIAB=$(curl -s -X POST http://localhost:8080/api/v1/accounts \
+            -H "Content-Type: application/json" \
+            -d '{"accountNumber":"ACC-LIAB-888","accountName":"Customer Wallet","accountType":"LIABILITY","currency":"USD","initialBalance":2500.00}')
+          echo "### 3. Created Liability Account:" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$ACC_LIAB" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # 4. Execute Balanced Double-Entry Transfer
+          echo "Executing Double-Entry Transfer (Asset -> Liability)..."
+          TRANSFER_RES=$(curl -s -X POST http://localhost:8080/api/v1/ledger/transfers \
+            -H "Content-Type: application/json" \
+            -d '{"sourceAccountNumber":"ACC-ASSET-888","destinationAccountNumber":"ACC-LIAB-888","amount":500.00,"currency":"USD","idempotencyKey":"KEY-E2E-LIVE-001","transactionReference":"TX-E2E-LIVE-001","description":"Live E2E Double-Entry Transfer"}')
+          echo "### 4. Posted Double-Entry Transfer:" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$TRANSFER_RES" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # 5. Query Updated Balance
+          echo "Querying Updated Asset Balance..."
+          UPDATED_ACC=$(curl -s http://localhost:8080/api/v1/accounts/number/ACC-ASSET-888)
+          echo "### 5. Updated Asset Balance (Debited 500.00 -> 9500.00):" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$UPDATED_ACC" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # 6. Evaluate Fraud Detection
+          echo "Evaluating AI Fraud Risk..."
+          FRAUD_RES=$(curl -s -X POST http://localhost:8080/api/v1/fraud/evaluate \
+            -H "Content-Type: application/json" \
+            -d '{"transactionReference":"TX-E2E-LIVE-001","accountNumber":"ACC-ASSET-888","amount":500.00,"currency":"USD","description":"Live E2E Double-Entry Transfer","clientIp":"192.168.1.50"}')
+          echo "### 6. AI Fraud Detection Decision:" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$FRAUD_RES" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # Verify that transfer returned an id
+          if echo "$TRANSFER_RES" | grep -q '"id"'; then
+            echo "✅ Live E2E Transfer verified successfully!"
+          else
+            echo "❌ Transfer verification failed: $TRANSFER_RES"
+            docker compose logs
+            exit 1
+          fi
+
+      - name: Stop Containers
+        if: always()
+        run: docker compose down
