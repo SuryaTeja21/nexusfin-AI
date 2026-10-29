@@ -57,6 +57,12 @@
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
 
+        <!-- Spring Kafka for Event-Driven Messaging -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
         <!-- PostgreSQL JDBC Driver -->
         <dependency>
             <groupId>org.postgresql</groupId>

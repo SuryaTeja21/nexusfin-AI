@@ -1,17 +1,21 @@
 package com.nexusfin.ledger.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexusfin.ledger.domain.entity.Account;
 import com.nexusfin.ledger.domain.entity.LedgerEntry;
+import com.nexusfin.ledger.domain.entity.OutboxEvent;
 import com.nexusfin.ledger.domain.entity.Transaction;
 import com.nexusfin.ledger.domain.model.AccountStatus;
 import com.nexusfin.ledger.domain.model.AccountType;
 import com.nexusfin.ledger.domain.model.EntryType;
+import com.nexusfin.ledger.domain.model.OutboxStatus;
 import com.nexusfin.ledger.domain.model.TransactionStatus;
 import com.nexusfin.ledger.domain.model.TransactionType;
 import com.nexusfin.ledger.dto.*;
 import com.nexusfin.ledger.exception.*;
 import com.nexusfin.ledger.repository.AccountRepository;
 import com.nexusfin.ledger.repository.LedgerEntryRepository;
+import com.nexusfin.ledger.repository.OutboxEventRepository;
 import com.nexusfin.ledger.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +36,8 @@ public class LedgerService {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * Posts a multi-leg double-entry transaction atomically.
@@ -160,6 +166,9 @@ public class LedgerService {
         accountRepository.saveAll(lockedAccountMap.values());
         Transaction saved = transactionRepository.save(transaction);
 
+        // Record Transactional Outbox Event for reliable Kafka streaming
+        recordOutboxEvent(saved, legs, lockedAccountMap, totalDebits);
+
         log.info("Transaction posted successfully: id={}, ref={}, totalVolume={}",
                 saved.getId(), saved.getTransactionReference(), totalDebits);
 
@@ -261,5 +270,57 @@ public class LedgerService {
         return ledgerEntryRepository.findByAccountIdOrderByCreatedAtDesc(accountId).stream()
                 .map(LedgerEntryResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    private void recordOutboxEvent(Transaction transaction, List<TransactionLegRequest> legs,
+                                   Map<String, Account> accountMap, BigDecimal amount) {
+        try {
+            String sourceAcc = null;
+            String destAcc = null;
+            UUID sourceId = null;
+            UUID destId = null;
+
+            for (TransactionLegRequest leg : legs) {
+                Account acc = accountMap.get(leg.getAccountNumber().trim());
+                if (leg.getEntryType() == EntryType.CREDIT && sourceAcc == null) {
+                    sourceAcc = leg.getAccountNumber();
+                    if (acc != null) sourceId = acc.getId();
+                } else if (leg.getEntryType() == EntryType.DEBIT && destAcc == null) {
+                    destAcc = leg.getAccountNumber();
+                    if (acc != null) destId = acc.getId();
+                }
+            }
+
+            TransactionPostedEvent eventPayload = TransactionPostedEvent.builder()
+                    .transactionId(transaction.getId())
+                    .transactionReference(transaction.getTransactionReference())
+                    .idempotencyKey(transaction.getIdempotencyKey())
+                    .transactionType(transaction.getTransactionType().name())
+                    .amount(amount)
+                    .currency(legs.isEmpty() ? "USD" : legs.get(0).getCurrency())
+                    .sourceAccountNumber(sourceAcc != null ? sourceAcc : (legs.isEmpty() ? "UNKNOWN" : legs.get(0).getAccountNumber()))
+                    .destinationAccountNumber(destAcc != null ? destAcc : (legs.size() > 1 ? legs.get(1).getAccountNumber() : "UNKNOWN"))
+                    .sourceAccountId(sourceId)
+                    .destinationAccountId(destId)
+                    .description(transaction.getDescription())
+                    .postedAt(transaction.getPostedAt())
+                    .build();
+
+            String jsonPayload = objectMapper.writeValueAsString(eventPayload);
+
+            OutboxEvent outboxEvent = OutboxEvent.builder()
+                    .aggregateType("TRANSACTION")
+                    .aggregateId(transaction.getId().toString())
+                    .eventType("TRANSACTION_POSTED")
+                    .payload(jsonPayload)
+                    .status(OutboxStatus.PENDING)
+                    .build();
+
+            outboxEventRepository.save(outboxEvent);
+            log.debug("Recorded OutboxEvent [{}] for transaction ref [{}]", outboxEvent.getId(), transaction.getTransactionReference());
+        } catch (Exception e) {
+            log.error("Failed to serialize and record outbox event for transaction ref {}: {}",
+                    transaction.getTransactionReference(), e.getMessage(), e);
+        }
     }
 }

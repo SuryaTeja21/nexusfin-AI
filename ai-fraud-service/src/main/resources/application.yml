@@ -21,6 +21,21 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: nexusfin-fraud-detection-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+nexusfin:
+  kafka:
+    consumer:
+      enabled: ${NEXUSFIN_KAFKA_CONSUMER_ENABLED:true}
+    topics:
+      ledger-transactions: nexusfin.ledger.transactions
+
   ai:
     openai:
       api-key: ${OPENAI_API_KEY:dummy-key}

@@ -1,7 +1,9 @@
 package com.nexusfin.ledger;
 
+import com.nexusfin.ledger.domain.entity.OutboxEvent;
 import com.nexusfin.ledger.domain.model.AccountType;
 import com.nexusfin.ledger.domain.model.EntryType;
+import com.nexusfin.ledger.domain.model.OutboxStatus;
 import com.nexusfin.ledger.domain.model.TransactionType;
 import com.nexusfin.ledger.dto.AccountResponse;
 import com.nexusfin.ledger.dto.CreateAccountRequest;
@@ -11,6 +13,7 @@ import com.nexusfin.ledger.dto.TransactionResponse;
 import com.nexusfin.ledger.dto.TransferFundsRequest;
 import com.nexusfin.ledger.exception.InsufficientFundsException;
 import com.nexusfin.ledger.exception.UnbalancedTransactionException;
+import com.nexusfin.ledger.repository.OutboxEventRepository;
 import com.nexusfin.ledger.service.AccountService;
 import com.nexusfin.ledger.service.LedgerService;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +41,9 @@ public class LedgerServiceTests {
 
     @Autowired
     private LedgerService ledgerService;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
 
     private AccountResponse assetAccount;
     private AccountResponse liabilityAccount;
@@ -167,5 +173,29 @@ public class LedgerServiceTests {
 
         assertThatThrownBy(() -> ledgerService.transferFunds(overdraftTransfer))
                 .isInstanceOf(InsufficientFundsException.class);
+    }
+
+    @Test
+    @DisplayName("Guarantees transactional outbox event creation upon transaction posting")
+    void testTransactionalOutboxEventCreation() {
+        TransferFundsRequest transfer = TransferFundsRequest.builder()
+                .sourceAccountNumber(assetAccount.getAccountNumber())
+                .destinationAccountNumber(liabilityAccount.getAccountNumber())
+                .amount(new BigDecimal("100.0000"))
+                .currency("USD")
+                .idempotencyKey("KEY-OUTBOX-001")
+                .transactionReference("TX-OUTBOX-001")
+                .description("Outbox event test transfer")
+                .build();
+
+        TransactionResponse response = ledgerService.transferFunds(transfer);
+        assertThat(response).isNotNull();
+
+        List<OutboxEvent> events = outboxEventRepository.findByAggregateId(response.getId().toString());
+        assertThat(events).isNotEmpty();
+        OutboxEvent event = events.get(0);
+        assertThat(event.getEventType()).isEqualTo("TRANSACTION_POSTED");
+        assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
+        assertThat(event.getPayload()).contains("TX-OUTBOX-001");
     }
 }
