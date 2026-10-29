@@ -3,8 +3,6 @@ package com.nexusfin.gateway.filter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cloud.gateway.filter.GatewayFilterChain;
-import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
@@ -14,6 +12,8 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
@@ -25,7 +25,7 @@ import java.util.List;
  * Enforces API Key and JWT bearer authentication at the edge before routing to internal microservices.
  */
 @Component
-public class GatewaySecurityFilter implements GlobalFilter, Ordered {
+public class GatewaySecurityFilter implements WebFilter, Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(GatewaySecurityFilter.class);
 
@@ -43,7 +43,7 @@ public class GatewaySecurityFilter implements GlobalFilter, Ordered {
     );
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getURI().getPath();
 
         // 1. Whitelist public observability and doc paths
@@ -72,7 +72,6 @@ public class GatewaySecurityFilter implements GlobalFilter, Ordered {
             principalId = "api-service-consumer";
             role = "ROLE_SERVICE";
         } else if (authHeader != null && authHeader.startsWith("Bearer ") && authHeader.length() > 10) {
-            // Valid bearer token structure
             isAuthenticated = true;
             principalId = "jwt-authenticated-user";
             role = "ROLE_USER";
@@ -98,15 +97,8 @@ public class GatewaySecurityFilter implements GlobalFilter, Ordered {
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
         String problemDetailsJson = String.format("""
-                {
-                  "type": "https://nexusfin.ai/errors/unauthorized",
-                  "title": "Unauthorized Request",
-                  "status": 401,
-                  "detail": "Missing or invalid credentials. Provide a valid 'X-API-Key' or 'Authorization: Bearer <token>' header.",
-                  "path": "%s",
-                  "timestamp": "%s"
-                }
-                """, path, Instant.now());
+                {"type":"https://nexusfin.ai/errors/unauthorized","title":"Unauthorized Request","status":401,"detail":"Missing or invalid credentials. Provide a valid 'X-API-Key' or 'Authorization: Bearer <token>' header.","path":"%s","timestamp":"%s"}""",
+                path, Instant.now());
 
         DataBuffer buffer = response.bufferFactory().wrap(problemDetailsJson.getBytes(StandardCharsets.UTF_8));
         return response.writeWith(Mono.just(buffer));

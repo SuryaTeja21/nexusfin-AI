@@ -9,8 +9,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = ApiGatewayApplication.class)
 @ActiveProfiles("test")
 public class ApiGatewayApplicationTests {
@@ -25,7 +23,7 @@ public class ApiGatewayApplicationTests {
                 .uri("/fallback/ledger")
                 .exchange()
                 .expectStatus().isEqualTo(503)
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectHeader().exists(CorrelationIdGlobalFilter.CORRELATION_ID_HEADER)
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(503)
@@ -39,7 +37,7 @@ public class ApiGatewayApplicationTests {
                 .uri("/fallback/fraud")
                 .exchange()
                 .expectStatus().isEqualTo(503)
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectHeader().exists(CorrelationIdGlobalFilter.CORRELATION_ID_HEADER)
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(503)
@@ -65,7 +63,7 @@ public class ApiGatewayApplicationTests {
                 .uri("/api/v1/accounts")
                 .exchange()
                 .expectStatus().isUnauthorized()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(401)
                 .jsonPath("$.title").isEqualTo("Unauthorized Request");

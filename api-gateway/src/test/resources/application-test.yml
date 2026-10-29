@@ -13,3 +13,4 @@ nexusfin:
   security:
     enabled: true
     api-key: test-api-key-12345
+

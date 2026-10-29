@@ -24,3 +24,4 @@ Chosen architecture:
 * Downstream services are protected from thundering herds during outages.
 * Clients receive immediate, machine-readable Problem Details during degradation.
 * Audit logs maintain full traceability across the microservice topology.
+
