@@ -37,6 +37,7 @@
         <flyway.version>9.22.3</flyway.version>
         <testcontainers.version>1.19.7</testcontainers.version>
         <jacoco.version>0.8.11</jacoco.version>
+        <springdoc.version>2.5.0</springdoc.version>
     </properties>
 
     <repositories>
@@ -104,6 +105,13 @@
                 <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- SpringDoc OpenAPI UI BOM / Dependency -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
