@@ -84,13 +84,33 @@ jobs:
       - name: Checkout Code Repository
         uses: actions/checkout@v4
 
+      - name: Set up Java 21 (Temurin LTS)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Make Maven Wrapper Executable
+        run: chmod +x mvnw
+
+      - name: Package Application JARs
+        run: ./mvnw clean package -DskipTests --batch-mode
+
       - name: Start Platform via Docker Compose
         run: |
           docker compose up -d --build
-          echo "Waiting for services to become healthy..."
-          timeout 180s bash -c 'until [ $(docker compose ps --filter "status=running" -q | wc -l) -ge 6 ]; do sleep 5; done' || true
-          sleep 30
+          echo "Waiting for containers to enter running state..."
+          timeout 180s bash -c 'until [ $(docker compose ps --filter "status=running" -q | wc -l) -ge 7 ]; do sleep 5; done' || true
           docker compose ps
+          echo "Waiting for Eureka discovery server to initialize..."
+          timeout 120s bash -c 'until curl -s http://localhost:8761/actuator/health | grep -q "UP"; do sleep 3; done' || true
+          echo "Waiting for Ledger Service to register with Eureka..."
+          timeout 120s bash -c 'until curl -s http://localhost:8761/eureka/apps/LEDGER-SERVICE | grep -q "UP"; do sleep 3; done' || true
+          echo "Waiting for AI Fraud Service to register with Eureka..."
+          timeout 120s bash -c 'until curl -s http://localhost:8761/eureka/apps/AI-FRAUD-SERVICE | grep -q "UP"; do sleep 3; done' || true
+          echo "Allowing API Gateway route cache to refresh..."
+          sleep 10
 
       - name: Execute Live End-to-End Financial Transactions
         run: |
@@ -157,6 +177,10 @@ jobs:
             docker compose logs
             exit 1
           fi
+
+      - name: Dump Container Logs on Failure
+        if: failure()
+        run: docker compose logs --tail=100
 
       - name: Stop Containers
         if: always()
