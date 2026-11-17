@@ -17,11 +17,14 @@ import com.nexusfin.ledger.repository.AccountRepository;
 import com.nexusfin.ledger.repository.LedgerEntryRepository;
 import com.nexusfin.ledger.repository.OutboxEventRepository;
 import com.nexusfin.ledger.repository.TransactionRepository;
+import com.nexusfin.ledger.repository.projection.AccountIdProjection;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -39,26 +42,59 @@ public class LedgerService {
     private final LedgerEntryRepository ledgerEntryRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final EntityManager entityManager;
+    private final TransactionTemplate transactionTemplate;
 
     /**
      * Posts a multi-leg double-entry transaction atomically.
      * Enforces:
      * 1. Idempotency (deduplication)
      * 2. Double-Entry math (Sum of Debits == Sum of Credits)
-     * 3. Deterministic pessimistic locking to prevent deadlocks
+     * 3. Deterministic pessimistic locking in ascending ID order to prevent deadlocks
      * 4. Currency uniformity per account
      * 5. Solvency / No negative balance checks for asset/liability accounts
      */
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public TransactionResponse postTransaction(PostTransactionRequest request) {
         log.info("Processing transaction post: ref={}, idempotencyKey={}, type={}",
                 request.getTransactionReference(), request.getIdempotencyKey(), request.getTransactionType());
 
-        // 1. Idempotency verification
+        // 1. Fast-path idempotency check before lock acquisition
         if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.getIdempotencyKey());
+            Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.getIdempotencyKey().trim());
             if (existing.isPresent()) {
                 log.info("Idempotent hit for transaction ref={}, returning existing record", existing.get().getTransactionReference());
+                return TransactionResponse.fromEntity(existing.get());
+            }
+        }
+
+        try {
+            return transactionTemplate.execute(status -> doExecutePostTransaction(request));
+        } catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException ex) {
+            // Under concurrent race: Another thread committed with the identical idempotency key
+            if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
+                for (int attempt = 0; attempt < 20; attempt++) {
+                    Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.getIdempotencyKey().trim());
+                    if (existing.isPresent()) {
+                        log.info("Resolved concurrent idempotency race for key={}, returning winning record", request.getIdempotencyKey());
+                        return TransactionResponse.fromEntity(existing.get());
+                    }
+                    try {
+                        Thread.sleep(25);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+            throw ex;
+        }
+    }
+
+    private TransactionResponse doExecutePostTransaction(PostTransactionRequest request) {
+        // Re-check idempotency within transaction boundary
+        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
+            Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.getIdempotencyKey().trim());
+            if (existing.isPresent()) {
                 return TransactionResponse.fromEntity(existing.get());
             }
         }
@@ -102,15 +138,15 @@ public class LedgerService {
         }
 
         // 3. Deterministic pessimistic lock acquisition to guarantee DEADLOCK IMMUNITY
-        // Resolve all account IDs first, sort them in ascending order, then acquire row locks in ONE query
+        // Resolve all account IDs first via projection (avoids populating persistence context with pre-lock stale state)
         Set<String> distinctAccountNumbers = legs.stream()
                 .map(l -> l.getAccountNumber().trim())
                 .collect(Collectors.toSet());
 
-        List<Account> resolvedAccounts = accountRepository.findByAccountNumberIn(distinctAccountNumbers);
-        if (resolvedAccounts.size() != distinctAccountNumbers.size()) {
-            Set<String> foundNumbers = resolvedAccounts.stream()
-                    .map(Account::getAccountNumber)
+        List<AccountIdProjection> idProjections = accountRepository.findAccountIdsByAccountNumberIn(distinctAccountNumbers);
+        if (idProjections.size() != distinctAccountNumbers.size()) {
+            Set<String> foundNumbers = idProjections.stream()
+                    .map(AccountIdProjection::getAccountNumber)
                     .collect(Collectors.toSet());
             for (String accNo : distinctAccountNumbers) {
                 if (!foundNumbers.contains(accNo)) {
@@ -119,14 +155,19 @@ public class LedgerService {
             }
         }
 
-        List<UUID> sortedAccountIds = resolvedAccounts.stream()
-                .map(Account::getId)
+        List<UUID> sortedAccountIds = idProjections.stream()
+                .map(AccountIdProjection::getId)
                 .sorted()
                 .collect(Collectors.toList());
 
         List<Account> lockedAccounts = accountRepository.findAllByIdsWithPessimisticLock(sortedAccountIds);
         if (lockedAccounts.size() != sortedAccountIds.size()) {
             throw new AccountNotFoundException("One or more accounts could not be locked");
+        }
+
+        // Refresh accounts to ensure latest database state if previously in session
+        for (Account a : lockedAccounts) {
+            entityManager.refresh(a);
         }
 
         Map<String, Account> lockedAccountMap = lockedAccounts.stream()
@@ -181,7 +222,7 @@ public class LedgerService {
 
         // Save accounts and transaction
         accountRepository.saveAll(lockedAccountMap.values());
-        Transaction saved = transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.saveAndFlush(transaction);
 
         // Record Transactional Outbox Event for reliable Kafka streaming
         recordOutboxEvent(saved, legs, lockedAccountMap, totalDebits);
@@ -195,7 +236,6 @@ public class LedgerService {
     /**
      * High-level fund transfer between two accounts using TransferFundsRequest.
      */
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public TransactionResponse transferFunds(TransferFundsRequest request) {
         log.info("Initiating fund transfer: source={}, dest={}, amount={} {}",
                 request.getSourceAccountNumber(), request.getDestinationAccountNumber(), request.getAmount(), request.getCurrency());
@@ -204,19 +244,60 @@ public class LedgerService {
             throw new LedgerException("Source and destination accounts cannot be identical");
         }
 
-        Account sourceAccount = accountRepository.findByAccountNumber(request.getSourceAccountNumber().trim())
-                .orElseThrow(() -> new AccountNotFoundException(request.getSourceAccountNumber()));
-        Account destAccount = accountRepository.findByAccountNumber(request.getDestinationAccountNumber().trim())
-                .orElseThrow(() -> new AccountNotFoundException(request.getDestinationAccountNumber()));
+        List<AccountIdProjection> projections = accountRepository.findAccountIdsByAccountNumberIn(
+                List.of(request.getSourceAccountNumber().trim(), request.getDestinationAccountNumber().trim()));
 
-        return executeTransfer(sourceAccount, destAccount, request.getAmount(), request.getCurrency(),
-                request.getIdempotencyKey(), request.getTransactionReference(), request.getDescription());
+        Map<String, AccountIdProjection> projectionMap = projections.stream()
+                .collect(Collectors.toMap(AccountIdProjection::getAccountNumber, Function.identity()));
+
+        AccountIdProjection sourceProj = projectionMap.get(request.getSourceAccountNumber().trim());
+        if (sourceProj == null) {
+            throw new AccountNotFoundException(request.getSourceAccountNumber());
+        }
+        AccountIdProjection destProj = projectionMap.get(request.getDestinationAccountNumber().trim());
+        if (destProj == null) {
+            throw new AccountNotFoundException(request.getDestinationAccountNumber());
+        }
+
+        EntryType sourceEntryType = sourceProj.getAccountType().getNormalBalance() == EntryType.DEBIT
+                ? EntryType.CREDIT
+                : EntryType.DEBIT;
+
+        EntryType destEntryType = sourceEntryType == EntryType.DEBIT
+                ? EntryType.CREDIT
+                : EntryType.DEBIT;
+
+        String ref = request.getTransactionReference() != null && !request.getTransactionReference().isBlank()
+                ? request.getTransactionReference().trim()
+                : "TRF-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        PostTransactionRequest postRequest = PostTransactionRequest.builder()
+                .transactionReference(ref)
+                .idempotencyKey(request.getIdempotencyKey())
+                .transactionType(TransactionType.TRANSFER)
+                .description(request.getDescription() != null ? request.getDescription() : "Transfer between accounts")
+                .legs(List.of(
+                        TransactionLegRequest.builder()
+                                .accountNumber(request.getSourceAccountNumber().trim())
+                                .entryType(sourceEntryType)
+                                .amount(request.getAmount())
+                                .currency(request.getCurrency())
+                                .build(),
+                        TransactionLegRequest.builder()
+                                .accountNumber(request.getDestinationAccountNumber().trim())
+                                .entryType(destEntryType)
+                                .amount(request.getAmount())
+                                .currency(request.getCurrency())
+                                .build()
+                ))
+                .build();
+
+        return postTransaction(postRequest);
     }
 
     /**
      * Overloaded fund transfer supporting TransferRequest (by UUID Account IDs).
      */
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public TransactionResponse transferFunds(TransferRequest request) {
         log.info("Initiating fund transfer by ID: source={}, dest={}, amount={} {}",
                 request.getSourceAccountId(), request.getTargetAccountId(), request.getAmount(), request.getCurrency());
@@ -230,59 +311,25 @@ public class LedgerService {
         Account destAccount = accountRepository.findById(request.getTargetAccountId())
                 .orElseThrow(() -> new AccountNotFoundException(request.getTargetAccountId()));
 
-        return executeTransfer(sourceAccount, destAccount, request.getAmount(), request.getCurrency(),
-                request.getIdempotencyKey(), request.getTransactionReference(), request.getDescription());
+        return transferFunds(TransferFundsRequest.builder()
+                .sourceAccountNumber(sourceAccount.getAccountNumber())
+                .destinationAccountNumber(destAccount.getAccountNumber())
+                .amount(request.getAmount())
+                .currency(request.getCurrency())
+                .idempotencyKey(request.getIdempotencyKey())
+                .transactionReference(request.getTransactionReference())
+                .description(request.getDescription())
+                .build());
     }
 
-    private TransactionResponse executeTransfer(Account sourceAccount, Account destAccount, BigDecimal amount,
-                                                 String currency, String idempotencyKey, String transactionReference,
-                                                 String description) {
-        // Source account decreases (opposite of normal balance)
-        EntryType sourceEntryType = sourceAccount.getAccountType().getNormalBalance() == EntryType.DEBIT
-                ? EntryType.CREDIT
-                : EntryType.DEBIT;
-
-        // Destination account receives the opposite entry to strictly enforce double-entry math (Debits == Credits)
-        EntryType destEntryType = sourceEntryType == EntryType.DEBIT
-                ? EntryType.CREDIT
-                : EntryType.DEBIT;
-
-        String ref = transactionReference != null && !transactionReference.isBlank()
-                ? transactionReference
-                : "TRF-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-
-        PostTransactionRequest postRequest = PostTransactionRequest.builder()
-                .transactionReference(ref)
-                .idempotencyKey(idempotencyKey)
-                .transactionType(TransactionType.TRANSFER)
-                .description(description != null ? description : "Transfer between accounts")
-                .legs(List.of(
-                        TransactionLegRequest.builder()
-                                .accountNumber(sourceAccount.getAccountNumber())
-                                .entryType(sourceEntryType)
-                                .amount(amount)
-                                .currency(currency)
-                                .build(),
-                        TransactionLegRequest.builder()
-                                .accountNumber(destAccount.getAccountNumber())
-                                .entryType(destEntryType)
-                                .amount(amount)
-                                .currency(currency)
-                                .build()
-                ))
-                .build();
-
-        return postTransaction(postRequest);
-    }
-
-    @Transactional(readOnly = true)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public TransactionResponse getTransactionByReference(String reference) {
         return transactionRepository.findByTransactionReference(reference.trim())
                 .map(TransactionResponse::fromEntity)
                 .orElseThrow(() -> new LedgerException("Transaction not found for reference: " + reference));
     }
 
-    @Transactional(readOnly = true)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<LedgerEntryResponse> getEntriesByAccountId(UUID accountId) {
         return ledgerEntryRepository.findByAccountIdOrderByCreatedAtDesc(accountId).stream()
                 .map(LedgerEntryResponse::fromEntity)
@@ -290,54 +337,44 @@ public class LedgerService {
     }
 
     private void recordOutboxEvent(Transaction transaction, List<TransactionLegRequest> legs,
-                                   Map<String, Account> accountMap, BigDecimal amount) {
+                                    Map<String, Account> lockedAccountMap, BigDecimal totalVolume) {
         try {
-            String sourceAcc = null;
-            String destAcc = null;
-            UUID sourceId = null;
-            UUID destId = null;
+            Map<String, Object> eventPayload = new HashMap<>();
+            eventPayload.put("transactionId", transaction.getId());
+            eventPayload.put("transactionReference", transaction.getTransactionReference());
+            eventPayload.put("transactionType", transaction.getTransactionType().name());
+            eventPayload.put("totalVolume", totalVolume);
+            eventPayload.put("postedAt", transaction.getPostedAt().toString());
 
-            for (TransactionLegRequest leg : legs) {
-                Account acc = accountMap.get(leg.getAccountNumber().trim());
-                if (leg.getEntryType() == EntryType.CREDIT && sourceAcc == null) {
-                    sourceAcc = leg.getAccountNumber();
-                    if (acc != null) sourceId = acc.getId();
-                } else if (leg.getEntryType() == EntryType.DEBIT && destAcc == null) {
-                    destAcc = leg.getAccountNumber();
-                    if (acc != null) destId = acc.getId();
-                }
-            }
+            List<Map<String, Object>> legSummaries = legs.stream().map(leg -> {
+                Map<String, Object> map = new HashMap<>();
+                Account acc = lockedAccountMap.get(leg.getAccountNumber().trim());
+                map.put("accountId", acc.getId());
+                map.put("accountNumber", acc.getAccountNumber());
+                map.put("accountType", acc.getAccountType().name());
+                map.put("entryType", leg.getEntryType().name());
+                map.put("amount", leg.getAmount());
+                map.put("currency", leg.getCurrency());
+                map.put("newBalance", acc.getBalance());
+                return map;
+            }).collect(Collectors.toList());
 
-            TransactionPostedEvent eventPayload = TransactionPostedEvent.builder()
-                    .transactionId(transaction.getId())
-                    .transactionReference(transaction.getTransactionReference())
-                    .idempotencyKey(transaction.getIdempotencyKey())
-                    .transactionType(transaction.getTransactionType().name())
-                    .amount(amount)
-                    .currency(legs.isEmpty() ? "USD" : legs.get(0).getCurrency())
-                    .sourceAccountNumber(sourceAcc != null ? sourceAcc : (legs.isEmpty() ? "UNKNOWN" : legs.get(0).getAccountNumber()))
-                    .destinationAccountNumber(destAcc != null ? destAcc : (legs.size() > 1 ? legs.get(1).getAccountNumber() : "UNKNOWN"))
-                    .sourceAccountId(sourceId)
-                    .destinationAccountId(destId)
-                    .description(transaction.getDescription())
-                    .postedAt(transaction.getPostedAt())
-                    .build();
-
-            String jsonPayload = objectMapper.writeValueAsString(eventPayload);
+            eventPayload.put("legs", legSummaries);
 
             OutboxEvent outboxEvent = OutboxEvent.builder()
                     .aggregateType("TRANSACTION")
                     .aggregateId(transaction.getId().toString())
                     .eventType("TRANSACTION_POSTED")
-                    .payload(jsonPayload)
+                    .payload(objectMapper.writeValueAsString(eventPayload))
                     .status(OutboxStatus.PENDING)
+                    .retryCount(0)
                     .build();
 
             outboxEventRepository.save(outboxEvent);
-            log.debug("Recorded OutboxEvent [{}] for transaction ref [{}]", outboxEvent.getId(), transaction.getTransactionReference());
         } catch (Exception e) {
-            log.error("Failed to serialize and record outbox event for transaction ref {}: {}",
-                    transaction.getTransactionReference(), e.getMessage(), e);
+            log.error("Failed to serialize and record outbox event for transaction [{}]: {}",
+                    transaction.getId(), e.getMessage(), e);
+            throw new LedgerException("Failed to record outbox event: " + e.getMessage());
         }
     }
 }

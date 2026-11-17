@@ -1,6 +1,7 @@
 package com.nexusfin.ledger.repository;
 
 import com.nexusfin.ledger.domain.entity.Account;
+import com.nexusfin.ledger.repository.projection.AccountIdProjection;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -19,6 +20,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     Optional<Account> findByAccountNumber(String accountNumber);
 
     List<Account> findByAccountNumberIn(Collection<String> accountNumbers);
+
+    @Query("SELECT a.accountNumber AS accountNumber, a.id AS id, a.accountType AS accountType FROM Account a WHERE a.accountNumber IN :accountNumbers")
+    List<AccountIdProjection> findAccountIdsByAccountNumberIn(@Param("accountNumbers") Collection<String> accountNumbers);
 
     boolean existsByAccountNumber(String accountNumber);
 
