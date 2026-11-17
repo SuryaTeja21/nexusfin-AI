@@ -11,6 +11,7 @@ import com.nexusfin.ledger.domain.model.TransactionType;
 import com.nexusfin.ledger.dto.PostTransactionRequest;
 import com.nexusfin.ledger.dto.TransactionLegRequest;
 import com.nexusfin.ledger.dto.TransactionResponse;
+import com.nexusfin.ledger.dto.TransferFundsRequest;
 import com.nexusfin.ledger.exception.CurrencyMismatchException;
 import com.nexusfin.ledger.exception.InsufficientFundsException;
 import com.nexusfin.ledger.exception.InvalidAccountStateException;
@@ -106,6 +107,84 @@ class LedgerServiceUnitTest {
         assertThatThrownBy(() -> ledgerService.postTransaction(request))
                 .isInstanceOf(LedgerException.class)
                 .hasMessageContaining("at least 2 legs");
+    }
+
+    @Test
+    @DisplayName("Validation: Must reject transaction with non-positive (zero or negative) leg amount")
+    void shouldRejectNonPositiveLegAmount() {
+        // Test Zero Amount
+        PostTransactionRequest zeroRequest = PostTransactionRequest.builder()
+                .transactionReference("TX-ZERO")
+                .transactionType(TransactionType.TRANSFER)
+                .legs(List.of(
+                        TransactionLegRequest.builder()
+                                .accountNumber("ACC-001")
+                                .entryType(EntryType.DEBIT)
+                                .amount(BigDecimal.ZERO)
+                                .currency("USD")
+                                .build(),
+                        TransactionLegRequest.builder()
+                                .accountNumber("ACC-002")
+                                .entryType(EntryType.CREDIT)
+                                .amount(BigDecimal.ZERO)
+                                .currency("USD")
+                                .build()
+                ))
+                .build();
+
+        assertThatThrownBy(() -> ledgerService.postTransaction(zeroRequest))
+                .isInstanceOf(LedgerException.class)
+                .hasMessageContaining("positive");
+
+        // Test Negative Amount
+        PostTransactionRequest negativeRequest = PostTransactionRequest.builder()
+                .transactionReference("TX-NEGATIVE")
+                .transactionType(TransactionType.TRANSFER)
+                .legs(List.of(
+                        TransactionLegRequest.builder()
+                                .accountNumber("ACC-001")
+                                .entryType(EntryType.DEBIT)
+                                .amount(new BigDecimal("-50.0000"))
+                                .currency("USD")
+                                .build(),
+                        TransactionLegRequest.builder()
+                                .accountNumber("ACC-002")
+                                .entryType(EntryType.CREDIT)
+                                .amount(new BigDecimal("-50.0000"))
+                                .currency("USD")
+                                .build()
+                ))
+                .build();
+
+        assertThatThrownBy(() -> ledgerService.postTransaction(negativeRequest))
+                .isInstanceOf(LedgerException.class)
+                .hasMessageContaining("positive");
+    }
+
+    @Test
+    @DisplayName("Validation: Must reject transfer with non-positive (zero or negative) amount")
+    void shouldRejectNonPositiveTransferAmount() {
+        TransferFundsRequest zeroTransfer = TransferFundsRequest.builder()
+                .sourceAccountNumber("ACC-SRC")
+                .destinationAccountNumber("ACC-DST")
+                .amount(BigDecimal.ZERO)
+                .currency("USD")
+                .build();
+
+        assertThatThrownBy(() -> ledgerService.transferFunds(zeroTransfer))
+                .isInstanceOf(LedgerException.class)
+                .hasMessageContaining("positive");
+
+        TransferFundsRequest negativeTransfer = TransferFundsRequest.builder()
+                .sourceAccountNumber("ACC-SRC")
+                .destinationAccountNumber("ACC-DST")
+                .amount(new BigDecimal("-25.0000"))
+                .currency("USD")
+                .build();
+
+        assertThatThrownBy(() -> ledgerService.transferFunds(negativeTransfer))
+                .isInstanceOf(LedgerException.class)
+                .hasMessageContaining("positive");
     }
 
     @Test
