@@ -21,8 +21,8 @@ import com.nexusfin.ledger.repository.projection.AccountIdProjection;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -69,25 +69,44 @@ public class LedgerService {
 
         try {
             return transactionTemplate.execute(status -> doExecutePostTransaction(request));
-        } catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException ex) {
-            // Under concurrent race: Another thread committed with the identical idempotency key
+        } catch (DataIntegrityViolationException ex) {
+            // Under concurrent race: PostgreSQL blocks the second inserter until the first commits.
+            // On unique constraint violation, the winner has already committed. Re-read once.
             if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-                for (int attempt = 0; attempt < 20; attempt++) {
+                if (isIdempotencyConstraintViolation(ex)) {
                     Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.getIdempotencyKey().trim());
                     if (existing.isPresent()) {
                         log.info("Resolved concurrent idempotency race for key={}, returning winning record", request.getIdempotencyKey());
                         return TransactionResponse.fromEntity(existing.get());
                     }
-                    try {
-                        Thread.sleep(25);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
                 }
             }
             throw ex;
         }
+    }
+
+    private boolean isIdempotencyConstraintViolation(DataIntegrityViolationException ex) {
+        Throwable current = ex;
+        while (current != null) {
+            if (current instanceof ConstraintViolationException cve) {
+                String constraint = cve.getConstraintName();
+                if (constraint != null) {
+                    String lower = constraint.toLowerCase();
+                    if (lower.contains("idempotency") || lower.contains("transaction_reference")) {
+                        return true;
+                    }
+                }
+            }
+            String msg = current.getMessage();
+            if (msg != null) {
+                String lower = msg.toLowerCase();
+                if (lower.contains("idempotency") || lower.contains("transaction_reference")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private TransactionResponse doExecutePostTransaction(PostTransactionRequest request) {
