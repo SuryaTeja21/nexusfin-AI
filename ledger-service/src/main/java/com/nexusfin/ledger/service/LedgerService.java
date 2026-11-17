@@ -147,6 +147,9 @@ public class LedgerService {
             if (leg.getAmount() == null || leg.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new LedgerException("Transaction leg amount must be strictly positive");
             }
+            if (leg.getAmount().scale() > 4) {
+                throw new LedgerException("Transaction leg amount must have at most 4 decimal places");
+            }
             BigDecimal scaledAmount = leg.getAmount().setScale(4);
             if (leg.getEntryType() == EntryType.DEBIT) {
                 totalDebits = totalDebits.add(scaledAmount);
@@ -264,6 +267,10 @@ public class LedgerService {
 
         if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new LedgerException("Transfer amount must be strictly positive");
+        }
+
+        if (request.getAmount().scale() > 4) {
+            throw new LedgerException("Transfer amount must have at most 4 decimal places");
         }
 
         if (request.getSourceAccountNumber().trim().equalsIgnoreCase(request.getDestinationAccountNumber().trim())) {
