@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 @Service
 @EnableScheduling
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "nexusfin.kafka.outbox.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisherService {
 
     private final OutboxEventRepository outboxEventRepository;

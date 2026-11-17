@@ -14,8 +14,7 @@ import com.nexusfin.ledger.service.LedgerService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.TestPropertySource;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -24,10 +23,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@TestPropertySource(properties = {"nexusfin.kafka.outbox.enabled=false"})
 class ConcurrencyAndCorrectnessIT extends AbstractPostgresIT {
-
-    @MockBean
-    private KafkaTemplate<String, String> kafkaTemplate;
 
     @Autowired
     private LedgerService ledgerService;

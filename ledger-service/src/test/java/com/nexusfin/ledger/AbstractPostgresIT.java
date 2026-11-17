@@ -28,6 +28,5 @@ public abstract class AbstractPostgresIT {
         registry.add("spring.jpa.properties.hibernate.type.preferred_instant_jdbc_type", () -> "TIMESTAMP");
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("eureka.client.enabled", () -> "false");
-        registry.add("nexusfin.kafka.outbox.poll-interval-ms", () -> "10000000");
     }
 }
