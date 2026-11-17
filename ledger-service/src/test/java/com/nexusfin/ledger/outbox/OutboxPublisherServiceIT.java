@@ -15,11 +15,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.KafkaContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
@@ -32,6 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
+@DirtiesContext
 @TestPropertySource(properties = {
         "nexusfin.kafka.outbox.enabled=true",
         "nexusfin.kafka.outbox.poll-interval-ms=100000",
@@ -40,9 +41,12 @@ import static org.mockito.Mockito.reset;
 })
 class OutboxPublisherServiceIT extends AbstractPostgresIT {
 
-    @Container
-    public static final KafkaContainer kafka = new KafkaContainer(
-            DockerImageName.parse("confluentinc/cp-kafka:7.6.0"));
+    public static final KafkaContainer kafka;
+
+    static {
+        kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.0"));
+        kafka.start();
+    }
 
     @DynamicPropertySource
     static void configureKafka(DynamicPropertyRegistry registry) {
