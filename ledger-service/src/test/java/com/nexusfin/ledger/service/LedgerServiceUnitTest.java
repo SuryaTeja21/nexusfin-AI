@@ -188,6 +188,46 @@ class LedgerServiceUnitTest {
     }
 
     @Test
+    @DisplayName("Validation: Must reject amounts with more than 4 decimal places with LedgerException")
+    void shouldRejectAmountsWithMoreThanFourDecimals() {
+        // 1. In postTransaction
+        PostTransactionRequest postRequest = PostTransactionRequest.builder()
+                .transactionReference("TX-DECIMALS")
+                .transactionType(TransactionType.TRANSFER)
+                .legs(List.of(
+                        TransactionLegRequest.builder()
+                                .accountNumber("ACC-001")
+                                .entryType(EntryType.DEBIT)
+                                .amount(new BigDecimal("10.12345"))
+                                .currency("USD")
+                                .build(),
+                        TransactionLegRequest.builder()
+                                .accountNumber("ACC-002")
+                                .entryType(EntryType.CREDIT)
+                                .amount(new BigDecimal("10.12345"))
+                                .currency("USD")
+                                .build()
+                ))
+                .build();
+
+        assertThatThrownBy(() -> ledgerService.postTransaction(postRequest))
+                .isInstanceOf(LedgerException.class)
+                .hasMessageContaining("at most 4 decimal places");
+
+        // 2. In transferFunds
+        TransferFundsRequest transferRequest = TransferFundsRequest.builder()
+                .sourceAccountNumber("ACC-001")
+                .destinationAccountNumber("ACC-002")
+                .amount(new BigDecimal("10.12345"))
+                .currency("USD")
+                .build();
+
+        assertThatThrownBy(() -> ledgerService.transferFunds(transferRequest))
+                .isInstanceOf(LedgerException.class)
+                .hasMessageContaining("at most 4 decimal places");
+    }
+
+    @Test
     @DisplayName("Validation: Must reject unbalanced double-entry transaction")
     void shouldRejectUnbalancedTransaction() {
         PostTransactionRequest request = PostTransactionRequest.builder()
