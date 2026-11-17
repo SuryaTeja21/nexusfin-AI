@@ -21,18 +21,36 @@ In standard relational databases (PostgreSQL), this produces a **Circular Wait D
 3. **Application-level Deterministic Pessimistic Write Lock Ordering (`SELECT ... FOR UPDATE`)**: Order all account identifiers in ascending order before acquiring locks.
 
 ## Decision Outcome
-Chosen option: **Option 3: Deterministic Ascending Lock Ordering in `LedgerService`**.
+Chosen option: **Option 3: Deterministic Ascending Lock Ordering in `LedgerService` via Batch Lock Acquisition**.
+
+All account IDs involved in the transaction legs are resolved first, sorted in ascending UUID order, and locked in a single batch query enforcing strict lock hierarchy:
 
 ```java
-List<String> sortedAccountNumbers = legs.stream()
+Set<String> distinctAccountNumbers = legs.stream()
         .map(l -> l.getAccountNumber().trim())
-        .distinct()
+        .collect(Collectors.toSet());
+
+List<Account> resolvedAccounts = accountRepository.findByAccountNumberIn(distinctAccountNumbers);
+if (resolvedAccounts.size() != distinctAccountNumbers.size()) {
+    // throw AccountNotFoundException for missing accounts
+}
+
+List<UUID> sortedAccountIds = resolvedAccounts.stream()
+        .map(Account::getId)
         .sorted()
         .collect(Collectors.toList());
 
-for (String accNo : sortedAccountNumbers) {
-    accountRepository.findByAccountNumberWithLock(accNo);
+List<Account> lockedAccounts = accountRepository.findAllByIdsWithPessimisticLock(sortedAccountIds);
+if (lockedAccounts.size() != sortedAccountIds.size()) {
+    throw new AccountNotFoundException("One or more accounts could not be locked");
 }
+```
+
+Repository query with deterministic ascending order:
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT a FROM Account a WHERE a.id IN :ids ORDER BY a.id ASC")
+List<Account> findAllByIdsWithPessimisticLock(@Param("ids") Collection<UUID> ids);
 ```
 
 ### Positive Consequences

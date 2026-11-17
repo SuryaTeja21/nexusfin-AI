@@ -18,6 +18,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     Optional<Account> findByAccountNumber(String accountNumber);
 
+    List<Account> findByAccountNumberIn(Collection<String> accountNumbers);
+
     boolean existsByAccountNumber(String accountNumber);
 
     /**
@@ -32,10 +34,10 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     Optional<Account> findByAccountNumberWithLock(@Param("accountNumber") String accountNumber);
 
     /**
-     * Locks a batch of accounts simultaneously with PESSIMISTIC_WRITE.
-     * Note: IDs should be sorted prior to execution to prevent deadlock.
+     * Locks a batch of accounts simultaneously with PESSIMISTIC_WRITE in strict ascending ID order.
+     * Note: Enforces a deterministic ascending lock hierarchy to prevent deadlocks.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT a FROM Account a WHERE a.id IN :ids")
+    @Query("SELECT a FROM Account a WHERE a.id IN :ids ORDER BY a.id ASC")
     List<Account> findAllByIdsWithPessimisticLock(@Param("ids") Collection<UUID> ids);
 }

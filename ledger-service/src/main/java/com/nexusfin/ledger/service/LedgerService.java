@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -101,19 +102,35 @@ public class LedgerService {
         }
 
         // 3. Deterministic pessimistic lock acquisition to guarantee DEADLOCK IMMUNITY
-        // Sort unique account numbers lexicographically before acquiring row locks
-        List<String> sortedAccountNumbers = legs.stream()
+        // Resolve all account IDs first, sort them in ascending order, then acquire row locks in ONE query
+        Set<String> distinctAccountNumbers = legs.stream()
                 .map(l -> l.getAccountNumber().trim())
-                .distinct()
+                .collect(Collectors.toSet());
+
+        List<Account> resolvedAccounts = accountRepository.findByAccountNumberIn(distinctAccountNumbers);
+        if (resolvedAccounts.size() != distinctAccountNumbers.size()) {
+            Set<String> foundNumbers = resolvedAccounts.stream()
+                    .map(Account::getAccountNumber)
+                    .collect(Collectors.toSet());
+            for (String accNo : distinctAccountNumbers) {
+                if (!foundNumbers.contains(accNo)) {
+                    throw new AccountNotFoundException(accNo);
+                }
+            }
+        }
+
+        List<UUID> sortedAccountIds = resolvedAccounts.stream()
+                .map(Account::getId)
                 .sorted()
                 .collect(Collectors.toList());
 
-        Map<String, Account> lockedAccountMap = new HashMap<>();
-        for (String accNo : sortedAccountNumbers) {
-            Account account = accountRepository.findByAccountNumberWithLock(accNo)
-                    .orElseThrow(() -> new AccountNotFoundException(accNo));
-            lockedAccountMap.put(accNo, account);
+        List<Account> lockedAccounts = accountRepository.findAllByIdsWithPessimisticLock(sortedAccountIds);
+        if (lockedAccounts.size() != sortedAccountIds.size()) {
+            throw new AccountNotFoundException("One or more accounts could not be locked");
         }
+
+        Map<String, Account> lockedAccountMap = lockedAccounts.stream()
+                .collect(Collectors.toMap(Account::getAccountNumber, Function.identity()));
 
         // 4. Validate accounts state and currencies
         for (TransactionLegRequest leg : legs) {

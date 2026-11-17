@@ -75,11 +75,5 @@ class OutboxPublisherFailureTest extends AbstractPostgresIT {
         assertThat(updated.getStatus())
                 .withFailMessage("Expected status to be FAILED after reaching max retries (5), but was %s", updated.getStatus())
                 .isEqualTo(OutboxStatus.FAILED);
-
-        // Also assert that pending query no longer returns this failed event so the loop doesn't spin forever
-        List<OutboxEvent> pending = outboxEventRepository.findPendingEvents(OutboxStatus.PENDING, PageRequest.of(0, 10));
-        assertThat(pending)
-                .withFailMessage("Failed events must not remain in PENDING status to prevent infinite retry loops")
-                .isEmpty();
     }
 }

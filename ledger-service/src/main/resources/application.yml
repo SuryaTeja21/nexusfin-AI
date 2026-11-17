@@ -46,12 +46,16 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
       retries: 3
+      properties:
+        enable.idempotence: true
 
 nexusfin:
   kafka:
     outbox:
       enabled: ${NEXUSFIN_OUTBOX_ENABLED:true}
       poll-interval-ms: 1000
+      batch-size: 50
+      max-retries: 5
     topics:
       ledger-transactions: nexusfin.ledger.transactions
 
