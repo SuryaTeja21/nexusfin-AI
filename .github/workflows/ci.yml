@@ -106,8 +106,10 @@ jobs:
         run: |
           docker compose up -d --build
           echo "Waiting for containers to enter running state..."
-          timeout 180s bash -c 'until [ $(docker compose ps --filter "status=running" -q | wc -l) -ge 7 ]; do sleep 5; done' || true
+          timeout 180s bash -c 'until [ $(docker compose ps --filter "status=running" -q | wc -l) -ge 8 ]; do sleep 5; done' || true
           docker compose ps
+          echo "Waiting for Keycloak IAM to initialize..."
+          timeout 120s bash -c 'until curl -s http://localhost:8083/realms/nexusfin | grep -q "nexusfin"; do sleep 3; done' || true
           echo "Waiting for Eureka discovery server to initialize..."
           timeout 120s bash -c 'until curl -s http://localhost:8761/actuator/health | grep -q "UP"; do sleep 3; done' || true
           echo "Waiting for Ledger Service to register with Eureka..."
@@ -121,60 +123,128 @@ jobs:
         run: |
           echo "## 🚀 Live API E2E Verification Results" >> $GITHUB_STEP_SUMMARY
 
-          # 1. API Gateway Health & Tracing
-          echo "Checking API Gateway..."
+          # 1. API Gateway Health (Public Actuator)
+          echo "Checking API Gateway Health..."
           GATEWAY_HEALTH=$(curl -s http://localhost:8080/actuator/health)
           echo "**1. Gateway Health:** \`$GATEWAY_HEALTH\`" >> $GITHUB_STEP_SUMMARY
 
-          # 2. Create Asset Account
-          echo "Creating Operating Reserve Account (Asset)..."
+          # 2. Negative Security Check: 401 Unauthorized without token
+          echo "Checking unauthenticated request rejection (401)..."
+          UNAUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/accounts/number/ACC-CUSTOMER-ALICE-USD)
+          if [ "$UNAUTH_STATUS" -ne 401 ]; then
+            echo "❌ Expected 401 UNAUTHORIZED for missing token, got $UNAUTH_STATUS"
+            docker compose logs api-gateway
+            exit 1
+          fi
+          echo "**2. Unauthenticated Request:** Correctly rejected with 401" >> $GITHUB_STEP_SUMMARY
+
+          # 3. Mint JWT Tokens from Keycloak
+          echo "Minting Customer JWT token from Keycloak..."
+          CUSTOMER_TOKEN=$(curl -s -X POST http://localhost:8083/realms/nexusfin/protocol/openid-connect/token \
+            -H "Host: keycloak:8080" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "client_id=nexusfin-gateway" \
+            -d "grant_type=password" \
+            -d "username=customer1" \
+            -d "password=customer_password" | jq -r .access_token)
+
+          echo "Minting Admin JWT token from Keycloak..."
+          ADMIN_TOKEN=$(curl -s -X POST http://localhost:8083/realms/nexusfin/protocol/openid-connect/token \
+            -H "Host: keycloak:8080" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "client_id=nexusfin-gateway" \
+            -d "grant_type=password" \
+            -d "username=admin1" \
+            -d "password=admin_password" | jq -r .access_token)
+
+          if [ -z "$CUSTOMER_TOKEN" ] || [ "$CUSTOMER_TOKEN" = "null" ]; then
+            echo "❌ Failed to mint customer token from Keycloak"
+            docker compose logs keycloak
+            exit 1
+          fi
+          if [ -z "$ADMIN_TOKEN" ] || [ "$ADMIN_TOKEN" = "null" ]; then
+            echo "❌ Failed to mint admin token from Keycloak"
+            docker compose logs keycloak
+            exit 1
+          fi
+          echo "**3. Keycloak Tokens:** Successfully minted for customer1 and admin1" >> $GITHUB_STEP_SUMMARY
+
+          # 4. Role Authorization: Customer forbidden from creating accounts (403)
+          echo "Checking role authorization (403 when CUSTOMER creates account)..."
+          CUST_CREATE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/v1/accounts \
+            -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"accountNumber":"ACC-ILLEGAL-999","accountName":"Illegal Account","accountType":"ASSET","currency":"USD","initialBalance":1000.00}')
+          if [ "$CUST_CREATE_STATUS" -ne 403 ]; then
+            echo "❌ Expected 403 FORBIDDEN for CUSTOMER creating account, got $CUST_CREATE_STATUS"
+            exit 1
+          fi
+          echo "**4. Role Authorization:** CUSTOMER creating account correctly returned 403" >> $GITHUB_STEP_SUMMARY
+
+          # 5. Create Asset & Liability Accounts with ADMIN Token
+          echo "Creating Operating Reserve Account (Asset) with ADMIN token..."
           ACC_ASSET=$(curl -s -X POST http://localhost:8080/api/v1/accounts \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"accountNumber":"ACC-ASSET-888","accountName":"Operating Reserve","accountType":"ASSET","currency":"USD","initialBalance":10000.00}')
-          echo "### 2. Created Asset Account:" >> $GITHUB_STEP_SUMMARY
+          echo "### 5a. Created Asset Account (Admin):" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           echo "$ACC_ASSET" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-          # 3. Create Liability Account
-          echo "Creating Customer Wallet Account (Liability)..."
+          echo "Creating Customer Wallet Account (Liability) owned by customer1..."
           ACC_LIAB=$(curl -s -X POST http://localhost:8080/api/v1/accounts \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"accountNumber":"ACC-LIAB-888","accountName":"Customer Wallet","accountType":"LIABILITY","currency":"USD","initialBalance":2500.00}')
-          echo "### 3. Created Liability Account:" >> $GITHUB_STEP_SUMMARY
+            -d '{"accountNumber":"ACC-LIAB-888","accountName":"Customer Wallet","accountType":"LIABILITY","currency":"USD","initialBalance":2500.00,"ownerId":"c0000000-0000-0000-0000-000000000001"}')
+          echo "### 5b. Created Liability Account (Admin):" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           echo "$ACC_LIAB" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-          # 4. Execute Balanced Double-Entry Transfer
-          echo "Executing Double-Entry Transfer (Asset -> Liability)..."
-          TRANSFER_RES=$(curl -s -X POST http://localhost:8080/api/v1/ledger/transfers \
+          # 6. Multi-tenant Tenant Isolation: Customer cannot read another user's account (403)
+          echo "Checking multi-tenant account isolation (Customer reading Bob's account -> 403)..."
+          BOB_READ_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+            http://localhost:8080/api/v1/accounts/number/ACC-CUSTOMER-BOB-USD)
+          if [ "$BOB_READ_STATUS" -ne 403 ]; then
+            echo "❌ Expected 403 FORBIDDEN when reading Bob's account, got $BOB_READ_STATUS"
+            exit 1
+          fi
+          echo "**6. Multi-Tenant Isolation:** Customer reading another tenant account returned 403" >> $GITHUB_STEP_SUMMARY
+
+          # 7. Customer successfully reads own seeded account (200)
+          echo "Querying own account (ACC-CUSTOMER-ALICE-USD) with CUSTOMER token..."
+          ALICE_ACC=$(curl -s -H "Authorization: Bearer $CUSTOMER_TOKEN" http://localhost:8080/api/v1/accounts/number/ACC-CUSTOMER-ALICE-USD)
+          echo "### 7. Customer Read Own Account:" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$ALICE_ACC" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # 8. Multi-tenant Theft Prevention: Customer cannot debit another user's account (403)
+          echo "Checking multi-tenant theft prevention (Customer debiting Bob's account -> 403)..."
+          THEFT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/v1/ledger/transfers \
+            -H "Authorization: Bearer $CUSTOMER_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"sourceAccountNumber":"ACC-ASSET-888","destinationAccountNumber":"ACC-LIAB-888","amount":500.00,"currency":"USD","idempotencyKey":"KEY-E2E-LIVE-001","transactionReference":"TX-E2E-LIVE-001","description":"Live E2E Double-Entry Transfer"}')
-          echo "### 4. Posted Double-Entry Transfer:" >> $GITHUB_STEP_SUMMARY
+            -d '{"sourceAccountNumber":"ACC-CUSTOMER-BOB-USD","destinationAccountNumber":"ACC-CUSTOMER-ALICE-USD","amount":100.00,"currency":"USD","idempotencyKey":"KEY-THEFT-001","transactionReference":"TX-THEFT-001","description":"Unauthorized debit"}')
+          if [ "$THEFT_STATUS" -ne 403 ]; then
+            echo "❌ Expected 403 FORBIDDEN for unauthorized debit leg, got $THEFT_STATUS"
+            exit 1
+          fi
+          echo "**8. Theft Prevention:** Unauthorized debit leg correctly blocked with 403" >> $GITHUB_STEP_SUMMARY
+
+          # 9. Execute Authorized Transfer: Customer transfers funds from own account
+          echo "Executing Authorized Transfer from Alice to Bob with CUSTOMER token..."
+          TRANSFER_RES=$(curl -s -X POST http://localhost:8080/api/v1/ledger/transfers \
+            -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"sourceAccountNumber":"ACC-CUSTOMER-ALICE-USD","destinationAccountNumber":"ACC-CUSTOMER-BOB-USD","amount":250.00,"currency":"USD","idempotencyKey":"KEY-E2E-LIVE-001","transactionReference":"TX-E2E-LIVE-001","description":"Live E2E Double-Entry Transfer"}')
+          echo "### 9. Authorized Customer Double-Entry Transfer:" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           echo "$TRANSFER_RES" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-          # 5. Query Updated Balance
-          echo "Querying Updated Asset Balance..."
-          UPDATED_ACC=$(curl -s http://localhost:8080/api/v1/accounts/number/ACC-ASSET-888)
-          echo "### 5. Updated Asset Balance (Debited 500.00 -> 9500.00):" >> $GITHUB_STEP_SUMMARY
-          echo '```json' >> $GITHUB_STEP_SUMMARY
-          echo "$UPDATED_ACC" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-          # 6. Evaluate Fraud Detection
-          echo "Evaluating AI Fraud Risk..."
-          FRAUD_RES=$(curl -s -X POST http://localhost:8080/api/v1/fraud/evaluate \
-            -H "Content-Type: application/json" \
-            -d '{"transactionReference":"TX-E2E-LIVE-001","accountNumber":"ACC-ASSET-888","amount":500.00,"currency":"USD","description":"Live E2E Double-Entry Transfer","clientIp":"192.168.1.50"}')
-          echo "### 6. AI Fraud Detection Decision:" >> $GITHUB_STEP_SUMMARY
-          echo '```json' >> $GITHUB_STEP_SUMMARY
-          echo "$FRAUD_RES" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-          # Verify that transfer returned an id
+          # Verify transfer success
           if echo "$TRANSFER_RES" | grep -q '"id"'; then
             echo "✅ Live E2E Transfer verified successfully!"
           else
@@ -182,6 +252,25 @@ jobs:
             docker compose logs
             exit 1
           fi
+
+          # 10. Query Updated Alice Balance
+          echo "Querying Updated Alice Balance with CUSTOMER token..."
+          UPDATED_ALICE=$(curl -s -H "Authorization: Bearer $CUSTOMER_TOKEN" http://localhost:8080/api/v1/accounts/number/ACC-CUSTOMER-ALICE-USD)
+          echo "### 10. Updated Alice Balance:" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$UPDATED_ALICE" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # 11. Evaluate Fraud Detection with ADMIN token
+          echo "Evaluating AI Fraud Risk with ADMIN token..."
+          FRAUD_RES=$(curl -s -X POST http://localhost:8080/api/v1/fraud/evaluate \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"transactionReference":"TX-E2E-LIVE-001","accountNumber":"ACC-CUSTOMER-ALICE-USD","amount":250.00,"currency":"USD","description":"Live E2E Double-Entry Transfer","clientIp":"192.168.1.50"}')
+          echo "### 11. AI Fraud Detection Decision:" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$FRAUD_RES" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Dump Container Logs on Failure
         if: failure()
