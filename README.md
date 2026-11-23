@@ -75,10 +75,10 @@ To provide complete transparency for engineering reviews and production readines
 | **Schema Migrations** | **Implemented** | Flyway managed schemas across all services (`ledger-service` V1-V3, `ai-fraud-service` V1-V2) with `ddl-auto: validate`. |
 | **Integration Concurrency Tests** | **Implemented** | Full Testcontainers integration suite (PostgreSQL 16, Kafka 3.7) testing opposing transfers, random pairs, outbox concurrency, and consumer idempotency. |
 | **API Gateway Routing & Resilience** | **Implemented** | Path routing, correlation ID injection, API key security filter, and Resilience4j circuit breaker with `/fallback/ledger` degradation. |
-| **Keycloak OAuth2 / OIDC PKCE** | *Planned (Phase 2)* | Currently uses API key security filter on Gateway. Real Keycloak realm with PKCE and JWT validation scheduled for Phase 2. |
-| **Redis Caching & Distributed Locks** | *Planned (Phase 3)* | In-memory and direct DB querying currently active. Redis balance read-through and idempotency caching scheduled for Phase 3. |
-| **WebSocket / STOMP Live Feed** | *Planned (Phase 4)* | Transactions are currently broadcast via Kafka. Frontend WebSocket push feed service scheduled for Phase 4. |
-| **Dead-Letter Topic (.DLT) Quarantine** | *Planned (Phase 5)* | Error handling and retry logic exist; formal Kafka DLT quarantine topic and admin visibility scheduled for Phase 5. |
+| **Keycloak OAuth2 / OIDC PKCE** | **Implemented** | Keycloak realm (`nexusfin`), reactive resource server on gateway, defense-in-depth resource server on `ledger-service`, tenant isolation via `owner_id`. |
+| **Redis Caching & Distributed Locks** | **Implemented** | Sub-millisecond idempotency cache hits, `SET NX` in-flight lock preventing duplicate concurrent transfers, post-commit balance eviction. |
+| **WebSocket / STOMP Live Feed** | **Implemented** | `notification-service` with authenticated STOMP endpoint (`/ws`), admin broadcast (`/topic/transactions`), customer queue (`/user/queue/transactions`), and Redis Pub/Sub cluster fan-out. |
+| **Dead-Letter Topic (.DLT) Quarantine** | **Implemented** | `DefaultErrorHandler` with non-retryable exception classification routing poison messages immediately to `nexusfin.ledger.transactions.DLT`, admin visibility endpoint (`/api/v1/fraud/dlt/messages`), one-click replay, and `dlt.messages` Micrometer metrics. |
 | **Distributed Tracing & Dashboards** | *Planned (Phase 6)* | Basic correlation IDs and Micrometer health metrics active. OpenTelemetry and Grafana stack scheduled for Phase 6. |
 | **k6 Load Benchmarks** | *Planned (Phase 7)* | Concurrency verified via JUnit Testcontainers. Formal k6 automated load benchmarks scheduled for Phase 7. |
 | **PGVector Semantic Search** | *Future Enhancement* | Audit logs are stored in PostgreSQL; semantic vector indexing for AML similarity clusters is not yet active. |
@@ -165,6 +165,20 @@ Locked with `PESSIMISTIC_WRITE` and `SKIP LOCKED`. It synchronously dispatches e
 
 ### 4.5 Idempotent Kafka Consumer
 `TransactionEventListener` in `ai-fraud-service` implements the Idempotent Consumer pattern using the `processed_events` table. If Kafka redelivers an event due to a network rebalance or broker retry, the consumer detects the existing record and skips re-evaluating the transaction, preventing duplicate audit records.
+
+### 4.6 Failure-Handling & Microservice Resilience Matrix
+NexusFin AI incorporates zero-trust, defense-in-depth failure resilience to isolate poison pills, transient errors, and cascading failures:
+
+| Failure Mode | Component Affected | Detection & Mitigation Strategy | Fallback / Recovery Mechanism |
+| :--- | :--- | :--- | :--- |
+| **Downstream Microservice Outage** | API Gateway | Resilience4j Reactive Circuit Breakers (50% failure rate threshold, 10s wait state) | Standardized RFC 7807 503 Problem Details (`/fallback/ledger`, `/fallback/fraud`) |
+| **Transient Read Latency / Blip** | API Gateway -> Microservices | Spring Cloud Gateway `Retry` filter (idempotent `GET` requests only, 3 retries, exponential backoff 50ms-500ms) | Automatic transparent retry; circuit breaker trips if persistent |
+| **Money-Moving POST Failure** | API Gateway / Ledger Service | **Zero Blind Retries**: Gateway strictly disables retries on non-idempotent HTTP methods (`POST`, `PUT`, `DELETE`) | Client retries safely with original `Idempotency-Key`; Ledger Service returns cached record |
+| **Poison Pill Message (Corrupt JSON)** | Kafka Consumers (`ai-fraud`, `notification`) | Spring Kafka `DefaultErrorHandler` with non-retryable exception classification (`JsonParseException`, `DeserializationException`, `IllegalArgumentException`) | Instant quarantine to `nexusfin.ledger.transactions.DLT` without retries or head-of-line blocking; metric `dlt.messages` incremented |
+| **Transient Consumer Database Lock** | Kafka Consumers | `DefaultErrorHandler` with `ExponentialBackOffWithMaxRetries` (2 retries, 100ms initial, factor 2.0) | Retries 3 times total; routes to `.DLT` if all retries fail |
+| **Quarantined Message Inspection & Recovery** | AI Fraud Service | In-memory `DltMessageStore` indexing all DLT events with metadata | `GET /api/v1/fraud/dlt/messages` (admin inspect) and `POST /api/v1/fraud/dlt/replay/{id}` (re-injects to Kafka) |
+| **Concurrent In-Flight Duplicate Transfer** | Ledger Service | Redis `SET NX` distributed lock on `idempotency_key` | Immediate HTTP 409 Conflict rejection; protects DB connection pool |
+| **Redis Outage** | Ledger / Notification | Fail-open fallback: cache failure logs warning and degrades directly to PostgreSQL / local routing | Business transactions proceed uninterrupted directly against PostgreSQL |
 
 ---
 

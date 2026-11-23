@@ -280,6 +280,54 @@ public class NotificationServiceIT {
         String received = customer2Queue.poll(2, TimeUnit.SECONDS);
         assertThat(received).isNull();
 
+        if (session.isConnected()) {
+            session.disconnect();
+        }
+    }
+
+    @Test
+    @DisplayName("4.6 / 5.4 Poison message on Kafka is routed to DLT without terminating WebSocket consumer session")
+    void testPoisonPillQuarantinedWithoutCrashingNotificationConsumer() throws Exception {
+        StompSession session = connect("admin-token");
+        assertThat(session.isConnected()).isTrue();
+
+        BlockingQueue<String> messages = new LinkedBlockingQueue<>();
+        session.subscribe("/topic/transactions", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return String.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                messages.offer((String) payload);
+            }
+        });
+
+        // 1. Send poison pill
+        String poison = "{ UNPARSED_POISON_PILL_INVALID_JSON ... ";
+        kafkaTemplate.send("nexusfin.ledger.transactions", poison).get(5, TimeUnit.SECONDS);
+
+        // 2. Send valid transaction immediately after poison pill
+        String validTxRef = "TX-VALID-RECOVERY-" + java.util.UUID.randomUUID();
+        String validJson = String.format("""
+                {
+                  "transactionId": "%s",
+                  "transactionReference": "%s",
+                  "amount": 999.00,
+                  "currency": "USD",
+                  "description": "Valid broadcast post-poison"
+                }
+                """, java.util.UUID.randomUUID(), validTxRef);
+
+        kafkaTemplate.send("nexusfin.ledger.transactions", validJson).get(5, TimeUnit.SECONDS);
+
+        // 3. Admin must receive the valid transaction cleanly
+        String received = messages.poll(5, TimeUnit.SECONDS);
+        assertThat(received).isNotNull();
+        assertThat(received).contains(validTxRef);
+        assertThat(session.isConnected()).isTrue();
+
         session.disconnect();
     }
 }

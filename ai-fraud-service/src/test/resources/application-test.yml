@@ -31,3 +31,6 @@ nexusfin:
   kafka:
     consumer:
       enabled: false
+    topics:
+      ledger-transactions: nexusfin.ledger.transactions
+      ledger-transactions-dlt: nexusfin.ledger.transactions.DLT

@@ -26,6 +26,20 @@ spring:
             - Path=/api/v1/accounts/**
           filters:
             - StripPrefix=0
+            - name: Retry
+              args:
+                retries: 3
+                methods:
+                  - GET
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
             - name: CircuitBreaker
               args:
                 name: ledgerCircuitBreaker
@@ -49,6 +63,20 @@ spring:
             - Path=/api/v1/fraud/**
           filters:
             - StripPrefix=0
+            - name: Retry
+              args:
+                retries: 3
+                methods:
+                  - GET
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
             - name: CircuitBreaker
               args:
                 name: fraudCircuitBreaker
@@ -106,3 +134,13 @@ resilience4j:
     configs:
       default:
         timeout-duration: 5s
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 50
+        max-wait-duration: 20ms
+    instances:
+      ledgerBulkhead:
+        base-config: default
+      fraudBulkhead:
+        base-config: default

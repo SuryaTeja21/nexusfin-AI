@@ -13,6 +13,9 @@ spring:
     consumer:
       group-id: notification-test-group
       auto-offset-reset: earliest
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 nexusfin:
   kafka:

@@ -34,6 +34,9 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
   ai:
     openai:
@@ -49,6 +52,7 @@ nexusfin:
       enabled: ${NEXUSFIN_KAFKA_CONSUMER_ENABLED:true}
     topics:
       ledger-transactions: nexusfin.ledger.transactions
+      ledger-transactions-dlt: nexusfin.ledger.transactions.DLT
 
 eureka:
   instance:

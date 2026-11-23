@@ -104,8 +104,12 @@ public class TransactionEventListener {
 
         } catch (DataIntegrityViolationException e) {
             log.warn("Concurrent duplicate event detected via DB constraint violation: {}", e.getMessage());
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.error("Malformed JSON payload received from Kafka: {}", e.getMessage());
+            throw new IllegalArgumentException("Malformed JSON payload: " + e.getMessage(), e);
+        } catch (RuntimeException e) {
             log.error("Failed to process transaction event payload from Kafka: {}", e.getMessage(), e);
+            throw e;
         }
     }
 }
