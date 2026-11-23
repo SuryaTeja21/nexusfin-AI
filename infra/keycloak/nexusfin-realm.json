@@ -1,0 +1,129 @@
+{
+  "id": "nexusfin",
+  "realm": "nexusfin",
+  "enabled": true,
+  "displayName": "NexusFin AI Financial Intelligence Platform",
+  "sslRequired": "NONE",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "id": "role-customer",
+        "name": "CUSTOMER",
+        "description": "Standard banking customer role for account transfers and balance inquiry"
+      },
+      {
+        "id": "role-admin",
+        "name": "ADMIN",
+        "description": "Administrative role for chart of accounts management and system auditing"
+      },
+      {
+        "id": "role-service",
+        "name": "SERVICE",
+        "description": "Service-to-service internal communication role for microservice federation"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "id": "client-nexusfin-gateway",
+      "clientId": "nexusfin-gateway",
+      "name": "NexusFin Edge API Gateway",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://localhost:8080/*",
+        "http://localhost:4200/*",
+        "http://127.0.0.1:8080/*",
+        "http://127.0.0.1:4200/*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "roles",
+        "profile",
+        "email"
+      ]
+    },
+    {
+      "id": "client-nexusfin-service",
+      "clientId": "nexusfin-service",
+      "name": "NexusFin Microservices Machine-to-Machine",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "nexusfin-service-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": [
+        "roles",
+        "profile",
+        "email"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "c0000000-0000-0000-0000-000000000001",
+      "username": "customer1",
+      "email": "customer1@nexusfin.io",
+      "firstName": "Alice",
+      "lastName": "Customer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "customer_password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000001",
+      "username": "admin1",
+      "email": "admin1@nexusfin.io",
+      "firstName": "Bob",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin_password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ]
+    },
+    {
+      "id": "s0000000-0000-0000-0000-000000000001",
+      "username": "service-account-nexusfin-service",
+      "enabled": true,
+      "serviceAccountClientId": "nexusfin-service",
+      "realmRoles": [
+        "SERVICE"
+      ]
+    }
+  ]
+}

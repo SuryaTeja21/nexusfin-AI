@@ -64,9 +64,11 @@ services:
     depends_on:
       discovery-server:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
     environment:
       EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
-      NEXUSFIN_API_KEY: ${NEXUSFIN_API_KEY:-nexusfin-local-dev-key} # local dev only
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
 
   # 5. Core ACID Double-Entry Ledger Service (Port 8081)
   ledger-service:
@@ -89,6 +91,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-nexusfin_secret} # local dev only
       EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
 
   # 6. AI Fraud Detection & Audit Intelligence Service (Port 8082)
   ai-fraud-service:
@@ -137,6 +140,27 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 8. Keycloak Identity and Access Management (OAuth 2.0 / OIDC Provider)
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.4
+    container_name: nexusfin-keycloak
+    command: start-dev --import-realm
+    ports:
+      - "8083:8080"
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
 volumes:
   pg_ledger_data:
