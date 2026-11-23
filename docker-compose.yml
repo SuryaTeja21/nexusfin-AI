@@ -47,6 +47,7 @@ services:
       - "8761:8761"
     environment:
       SPRING_APPLICATION_NAME: discovery-server
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx192m"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep UP || exit 1"]
       interval: 10s
@@ -69,6 +70,7 @@ services:
     environment:
       EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m"
 
   # 5. Core ACID Double-Entry Ledger Service (Port 8081)
   ledger-service:
@@ -96,6 +98,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx384m"
 
   # 6. AI Fraud Detection & Audit Intelligence Service (Port 8082)
   ai-fraud-service:
@@ -119,6 +122,7 @@ services:
       EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
       OPENAI_API_KEY: ${OPENAI_API_KEY:-demo-key}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m"
 
   # 7. Apache Kafka (KRaft Mode - Event Streaming Engine)
   kafka:
@@ -157,6 +161,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HEALTH_ENABLED: "true"
       KC_HTTP_ENABLED: "true"
+      JAVA_OPTS_APPEND: "-Xms128m -Xmx384m -XX:MaxMetaspaceSize=192m"
     volumes:
       - ./infra/keycloak:/opt/keycloak/data/import:ro
     healthcheck:
@@ -204,6 +209,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m"
 
 volumes:
   pg_ledger_data:
