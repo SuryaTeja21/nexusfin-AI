@@ -1,6 +1,11 @@
 spring:
   application:
     name: api-gateway-test
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://auth.nexusfin.io/realms/nexusfin
   cloud:
     discovery:
       enabled: false
@@ -13,12 +18,15 @@ spring:
           uri: http://localhost:8081
           predicates:
             - Path=/api/v1/accounts/**
+        - id: test-ledger-route
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/ledger/**
+        - id: test-fraud-route
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/v1/fraud/**
 
 eureka:
   client:
     enabled: false
-
-nexusfin:
-  security:
-    enabled: true
-    api-key: test-api-key-12345

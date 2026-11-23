@@ -26,7 +26,7 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 
 ## Phase 2: Real Authentication and Authorization
 - [x] **#2.1**: Provision Keycloak in Docker Compose with pre-configured realm import (`nexusfin-realm.json`).
-- [ ] **#2.2**: Configure API Gateway as reactive OAuth2 Resource Server (`SecurityWebFilterChain`).
+- [x] **#2.2**: Configure API Gateway as reactive OAuth2 Resource Server (`SecurityWebFilterChain`).
 - [ ] **#2.3**: Enforce defense-in-depth resource server security and account ownership (`owner_id`) in `ledger-service`.
 - [ ] **#2.4**: Add automated security tests (401 unauthenticated, 403 unauthorized, 200 role-authorized).
 - [ ] **#2.5**: Update CI workflow e2e job with token acquisition and verification.
