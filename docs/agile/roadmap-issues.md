@@ -18,7 +18,7 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 - [x] **#1.3**: Add Testcontainers concurrency ITs (opposing transfers, random pairs, race idempotency, race insufficient funds).
 - [x] **#1.4**: Remove hardcoded API key and database secrets from Java/YAML source.
 - [x] **#1.5**: Make fraud service honest: implement strict JSON LLM parsing with heuristic fallback or align docs.
-- [ ] **#1.6**: Switch `ai-fraud-service` schema management to Flyway migrations (`V1__fraud_audit_log.sql`).
+- [x] **#1.6**: Switch `ai-fraud-service` schema management to Flyway migrations (`V1__fraud_audit_log.sql`).
 - [ ] **#1.7**: Ensure Kafka consumers are idempotent via `processed_events` table or unique key on audit logs.
 - [ ] **#1.8**: Comprehensive README & documentation truth pass.
 

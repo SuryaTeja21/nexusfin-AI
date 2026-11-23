@@ -16,6 +16,9 @@ spring:
     hibernate:
       ddl-auto: create-drop
 
+  flyway:
+    enabled: false
+
   ai:
     openai:
       api-key: test-dummy-key
