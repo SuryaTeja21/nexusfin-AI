@@ -13,10 +13,10 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ---
 
 ## Phase 1: Make Existing Claims True
-- [ ] **#1.1**: Fix transactional outbox race condition with `SELECT ... FOR UPDATE SKIP LOCKED` and synchronous dispatch within `@Transactional`.
-- [ ] **#1.2**: Fix lock ordering: replace per-account loop with single ordered batch lock query `findAllByIdsWithPessimisticLock`.
-- [ ] **#1.3**: Add Testcontainers concurrency ITs (opposing transfers, random pairs, race idempotency, race insufficient funds).
-- [ ] **#1.4**: Remove hardcoded API key and database secrets from Java/YAML source.
+- [x] **#1.1**: Fix transactional outbox race condition with `SELECT ... FOR UPDATE SKIP LOCKED` and synchronous dispatch within `@Transactional`.
+- [x] **#1.2**: Fix lock ordering: replace per-account loop with single ordered batch lock query `findAllByIdsWithPessimisticLock`.
+- [x] **#1.3**: Add Testcontainers concurrency ITs (opposing transfers, random pairs, race idempotency, race insufficient funds).
+- [x] **#1.4**: Remove hardcoded API key and database secrets from Java/YAML source.
 - [ ] **#1.5**: Make fraud service honest: implement strict JSON LLM parsing with heuristic fallback or align docs.
 - [ ] **#1.6**: Switch `ai-fraud-service` schema management to Flyway migrations (`V1__fraud_audit_log.sql`).
 - [ ] **#1.7**: Ensure Kafka consumers are idempotent via `processed_events` table or unique key on audit logs.

@@ -99,4 +99,4 @@ resilience4j:
 nexusfin:
   security:
     enabled: ${NEXUSFIN_SECURITY_ENABLED:false}
-    api-key: ${NEXUSFIN_API_KEY:nexusfin-prod-secret-key-2026}
+    api-key: ${NEXUSFIN_API_KEY}

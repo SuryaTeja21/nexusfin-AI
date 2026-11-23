@@ -32,7 +32,7 @@ public class GatewaySecurityFilter implements WebFilter, Ordered {
     @Value("${nexusfin.security.enabled:false}")
     private boolean securityEnabled;
 
-    @Value("${nexusfin.security.api-key:nexusfin-prod-secret-key-2026}")
+    @Value("${nexusfin.security.api-key}")
     private String configuredApiKey;
 
     private static final List<String> WHITELISTED_PATHS = List.of(

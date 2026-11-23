@@ -10,6 +10,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  POSTGRES_PASSWORD: nexusfin_ci_secret_password
+  SPRING_DATASOURCE_PASSWORD: nexusfin_ci_secret_password
+  NEXUSFIN_API_KEY: nexusfin-ci-secret-key-2026
+
 jobs:
   build-and-test:
     name: Build, Test & Verify Invariants
