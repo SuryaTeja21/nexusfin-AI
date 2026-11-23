@@ -1,5 +1,7 @@
 package com.nexusfin.fraud.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexusfin.fraud.domain.entity.AuditLogEntry;
 import com.nexusfin.fraud.domain.model.FraudDecision;
 import com.nexusfin.fraud.domain.model.RiskLevel;
@@ -33,6 +35,7 @@ public class AiFraudDetectionService {
     private static final Logger log = LoggerFactory.getLogger(AiFraudDetectionService.class);
 
     private final AuditLogRepository auditLogRepository;
+    private final ObjectMapper objectMapper;
 
     @Autowired(required = false)
     private ChatClient chatClient;
@@ -52,7 +55,7 @@ public class AiFraudDetectionService {
             try {
                 response = evaluateWithSpringAi(request);
             } catch (Exception e) {
-                log.warn("Spring AI inference failed or timed out. Falling back to heuristic rule engine: {}", e.getMessage());
+                log.warn("Spring AI inference or JSON parsing failed. Falling back to heuristic rule engine: {}", e.getMessage());
                 response = evaluateWithHeuristics(request);
             }
         } else {
@@ -72,6 +75,7 @@ public class AiFraudDetectionService {
                 .riskLevel(response.getRiskLevel())
                 .decision(response.getDecision())
                 .reasoning(response.getReasoning())
+                .engine(response.getEngine())
                 .modelName(response.getEvaluatedByModel())
                 .createdAt(Instant.now())
                 .build();
@@ -80,16 +84,24 @@ public class AiFraudDetectionService {
         return response;
     }
 
-    private FraudEvaluationResponse evaluateWithSpringAi(FraudEvaluationRequest request) {
+    private FraudEvaluationResponse evaluateWithSpringAi(FraudEvaluationRequest request) throws Exception {
         String systemPrompt = """
                 You are the NexusFin AI Anti-Fraud and AML Intelligence Engine.
-                Analyze the transaction details and provide a risk assessment in concise format.
-                Transaction Ref: %s
-                Amount: %s %s
-                Source Account: %s
-                Target Account: %s
-                Description: %s
-                Client IP: %s
+                Analyze the transaction and respond ONLY with a raw JSON object (no markdown, no extra text) adhering strictly to this schema:
+                {
+                  "riskScore": <number between 0.0 and 1.0>,
+                  "riskLevel": "<LOW|MEDIUM|HIGH|CRITICAL>",
+                  "decision": "<APPROVED|REVIEW_REQUIRED|REJECTED>",
+                  "reason": "<concise justification>",
+                  "riskFactors": ["<FACTOR_1>", ...]
+                }
+                Transaction Details:
+                - Transaction Ref: %s
+                - Amount: %s %s
+                - Source Account ID: %s
+                - Target Account ID: %s
+                - Description: %s
+                - Client IP: %s
                 """.formatted(
                 request.getTransactionReference(),
                 request.getAmount(),
@@ -103,8 +115,74 @@ public class AiFraudDetectionService {
         String aiResponse = chatClient.call(new Prompt(systemPrompt)).getResult().getOutput().getContent();
         log.info("Spring AI Fraud Response received: {}", aiResponse);
 
-        // Parse or fallback to structured assessment
-        return evaluateWithHeuristics(request);
+        return parseLlmResponse(request, aiResponse);
+    }
+
+    private FraudEvaluationResponse parseLlmResponse(FraudEvaluationRequest request, String rawResponse) throws Exception {
+        if (rawResponse == null || rawResponse.isBlank()) {
+            throw new IllegalArgumentException("Empty response received from LLM");
+        }
+
+        String cleaned = rawResponse.trim();
+        if (cleaned.startsWith("```json")) {
+            cleaned = cleaned.substring(7);
+        } else if (cleaned.startsWith("```")) {
+            cleaned = cleaned.substring(3);
+        }
+        if (cleaned.endsWith("```")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 3);
+        }
+        cleaned = cleaned.trim();
+
+        JsonNode root = objectMapper.readTree(cleaned);
+
+        if (!root.hasNonNull("riskScore")) {
+            throw new IllegalArgumentException("LLM JSON missing required field: 'riskScore'");
+        }
+        double riskScore = root.get("riskScore").asDouble();
+        if (riskScore < 0.0 || riskScore > 1.0) {
+            throw new IllegalArgumentException("LLM riskScore out of bounds [0.0, 1.0]: " + riskScore);
+        }
+
+        if (!root.hasNonNull("riskLevel")) {
+            throw new IllegalArgumentException("LLM JSON missing required field: 'riskLevel'");
+        }
+        RiskLevel riskLevel = RiskLevel.valueOf(root.get("riskLevel").asText().trim().toUpperCase());
+
+        if (!root.hasNonNull("decision")) {
+            throw new IllegalArgumentException("LLM JSON missing required field: 'decision'");
+        }
+        FraudDecision decision = FraudDecision.valueOf(root.get("decision").asText().trim().toUpperCase());
+
+        String reason = "";
+        if (root.hasNonNull("reason")) {
+            reason = root.get("reason").asText().trim();
+        } else if (root.hasNonNull("reasoning")) {
+            reason = root.get("reasoning").asText().trim();
+        }
+        if (reason.isBlank()) {
+            throw new IllegalArgumentException("LLM JSON missing or empty 'reason' field");
+        }
+
+        List<String> riskFactors = new ArrayList<>();
+        if (root.has("riskFactors") && root.get("riskFactors").isArray()) {
+            for (JsonNode factorNode : root.get("riskFactors")) {
+                riskFactors.add(factorNode.asText());
+            }
+        }
+
+        return FraudEvaluationResponse.builder()
+                .evaluationId(UUID.randomUUID())
+                .transactionReference(request.getTransactionReference())
+                .riskScore(riskScore)
+                .riskLevel(riskLevel)
+                .decision(decision)
+                .reasoning(reason)
+                .riskFactors(riskFactors)
+                .evaluatedAt(Instant.now())
+                .engine("LLM")
+                .evaluatedByModel("Spring-AI-LLM")
+                .build();
     }
 
     /**
@@ -118,20 +196,20 @@ public class AiFraudDetectionService {
         List<String> riskFactors = new ArrayList<>();
         String reasoning;
 
-        if (amount.compareTo(new BigDecimal("1000000.0000")) > 0) {
+        if (amount != null && amount.compareTo(new BigDecimal("1000000.0000")) > 0) {
             riskScore = 0.95;
             riskLevel = RiskLevel.CRITICAL;
             decision = FraudDecision.REJECTED;
             riskFactors.add("HIGH_VALUE_THRESHOLD_EXCEEDED");
             riskFactors.add("SUSPICIOUS_TRANSFER_SPIKE");
             reasoning = "Transaction exceeds statutory threshold of $1,000,000. Immediate AML review and block enforced.";
-        } else if (amount.compareTo(new BigDecimal("100000.0000")) > 0) {
+        } else if (amount != null && amount.compareTo(new BigDecimal("100000.0000")) > 0) {
             riskScore = 0.65;
             riskLevel = RiskLevel.HIGH;
             decision = FraudDecision.REVIEW_REQUIRED;
             riskFactors.add("LARGE_TRANSACTION_VALUE");
             reasoning = "Transaction amount is in excess of $100,000. Flagged for secondary human compliance review.";
-        } else if (amount.compareTo(new BigDecimal("25000.0000")) > 0) {
+        } else if (amount != null && amount.compareTo(new BigDecimal("25000.0000")) > 0) {
             riskScore = 0.35;
             riskLevel = RiskLevel.MEDIUM;
             decision = FraudDecision.APPROVED;
@@ -153,6 +231,7 @@ public class AiFraudDetectionService {
                 .reasoning(reasoning)
                 .riskFactors(riskFactors)
                 .evaluatedAt(Instant.now())
+                .engine("HEURISTIC")
                 .evaluatedByModel("NexusFin-Heuristic-Rule-Engine-v1")
                 .build();
     }

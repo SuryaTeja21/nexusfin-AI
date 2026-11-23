@@ -25,5 +25,6 @@ public class FraudEvaluationResponse {
     private String reasoning;
     private List<String> riskFactors;
     private Instant evaluatedAt;
+    private String engine;
     private String evaluatedByModel;
 }

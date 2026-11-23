@@ -26,13 +26,13 @@ The architecture strictly follows GAAP/IFRS double-entry accounting invariants, 
      │  ledger-service (Port 8081)│                     │ai-fraud-service (Port 8082)│
      │  - Strict Double-Entry    │                     │ - Spring AI / OpenAI LLM  │
      │  - Deterministic Row Locks│                     │ - Heuristic Rule Engine   │
-     │  - Virtual Threads Loom   │                     │ - Vector Store Audit Logs │
+     │  - Virtual Threads Loom   │                     │ - Audit Intelligence Logs │
      └─────────────┬─────────────┘                     └─────────────┬─────────────┘
                    │                                                 │
                    ▼                                                 ▼
       ┌─────────────────────────┐                       ┌─────────────────────────┐
       │ postgres-ledger (5432)  │                       │ postgres-vector (5433)  │
-      │  ACID Ledger & Flyway   │                       │  PGVector & Embeddings  │
+      │  ACID Ledger & Flyway   │                       │  Audit Intelligence DB  │
       └─────────────────────────┘                       └─────────────────────────┘
                                            ▲
                                            │
@@ -49,7 +49,7 @@ The architecture strictly follows GAAP/IFRS double-entry accounting invariants, 
 ```text
 nexusfin-ai/
 ├── pom.xml                                      # Multi-Module Parent POM (Spring Boot 3.2.5, Spring Cloud 2023, Spring AI 0.8.1)
-├── docker-compose.yml                           # Full stack orchestration (PostgreSQL 16, PGVector, Microservices)
+├── docker-compose.yml                           # Full stack orchestration (PostgreSQL 16, Microservices)
 ├── discovery-server/                            # Netflix Eureka Service Registry (Port 8761)
 │   ├── src/main/java/com/nexusfin/discovery/
 │   └── src/main/resources/application.yml
@@ -181,7 +181,7 @@ curl -X POST http://localhost:8080/api/v1/fraud/evaluate \
 
 ## 5. Local Orchestration with Docker Compose
 
-To boot the entire infrastructure (PostgreSQL, PGVector, Discovery Server, API Gateway, Ledger Service, and AI Fraud Service):
+To boot the entire infrastructure (PostgreSQL, Discovery Server, API Gateway, Ledger Service, and AI Fraud Service):
 
 ```bash
 # 1. Start all containers in detached mode

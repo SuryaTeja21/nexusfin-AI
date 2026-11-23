@@ -54,6 +54,9 @@ public class AuditLogEntry {
     @Column(name = "reasoning", columnDefinition = "TEXT")
     private String reasoning;
 
+    @Column(name = "engine", length = 32)
+    private String engine;
+
     @Column(name = "model_name", length = 64)
     private String modelName;
 
