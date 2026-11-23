@@ -34,9 +34,9 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ---
 
 ## Phase 3: Redis Integration
-- [ ] **#3.1**: Implement Redis idempotency caching and account-balance read-through caching with post-commit eviction.
-- [ ] **#3.2**: Add Testcontainers Redis integration tests with fail-open fallback verification.
-- [ ] **#3.3**: Instrument Micrometer cache hit/miss metrics.
+- [x] **#3.1**: Implement Redis idempotency caching and account-balance read-through caching with post-commit eviction.
+- [x] **#3.2**: Add Testcontainers Redis integration tests with fail-open fallback verification.
+- [x] **#3.3**: Instrument Micrometer cache hit/miss metrics and add ADR-006.
 
 ---
 

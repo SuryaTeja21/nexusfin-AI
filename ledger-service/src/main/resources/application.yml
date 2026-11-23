@@ -40,6 +40,12 @@ spring:
           order_inserts: true
           order_updates: true
 
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 500ms
+
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -56,6 +62,11 @@ spring:
         enable.idempotence: true
 
 nexusfin:
+  redis:
+    enabled: ${NEXUSFIN_REDIS_ENABLED:true}
+    idempotency-ttl-seconds: ${NEXUSFIN_REDIS_IDEMPOTENCY_TTL:86400}
+    balance-ttl-seconds: ${NEXUSFIN_REDIS_BALANCE_TTL:300}
+    in-flight-lock-ttl-seconds: ${NEXUSFIN_REDIS_IN_FLIGHT_LOCK_TTL:60}
   kafka:
     outbox:
       enabled: ${NEXUSFIN_OUTBOX_ENABLED:true}

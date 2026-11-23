@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,7 @@ import java.util.stream.Collectors;
 public class AccountService {
 
     private final AccountRepository accountRepository;
+    private final RedisCacheService redisCacheService;
 
     @Transactional
     public AccountResponse createAccount(CreateAccountRequest request) {
@@ -52,7 +54,9 @@ public class AccountService {
         log.info("Created new account: id={}, number={}, type={}, currency={}, ownerId={}",
                 saved.getId(), saved.getAccountNumber(), saved.getAccountType(), saved.getCurrency(), saved.getOwnerId());
 
-        return AccountResponse.fromEntity(saved);
+        AccountResponse response = AccountResponse.fromEntity(saved);
+        redisCacheService.cacheAccount(response);
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -65,10 +69,20 @@ public class AccountService {
 
     @Transactional(readOnly = true)
     public AccountResponse getAccountByAccountNumber(String accountNumber) {
-        Account account = accountRepository.findByAccountNumber(accountNumber.trim())
-                .orElseThrow(() -> new AccountNotFoundException(accountNumber));
+        String trimmed = accountNumber.trim();
+        Optional<AccountResponse> cached = redisCacheService.getCachedAccount(trimmed);
+        if (cached.isPresent()) {
+            AccountResponse response = cached.get();
+            verifyAccountOwnership(response.getOwnerId(), response.getAccountNumber(), SecurityContextHolder.getContext().getAuthentication());
+            return response;
+        }
+
+        Account account = accountRepository.findByAccountNumber(trimmed)
+                .orElseThrow(() -> new AccountNotFoundException(trimmed));
         verifyAccountOwnership(account, SecurityContextHolder.getContext().getAuthentication());
-        return AccountResponse.fromEntity(account);
+        AccountResponse response = AccountResponse.fromEntity(account);
+        redisCacheService.cacheAccount(response);
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -86,6 +100,10 @@ public class AccountService {
     }
 
     public void verifyAccountOwnership(Account account, Authentication authentication) {
+        verifyAccountOwnership(account.getOwnerId(), account.getAccountNumber(), authentication);
+    }
+
+    public void verifyAccountOwnership(String ownerId, String accountNumber, Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return;
         }
@@ -94,9 +112,9 @@ public class AccountService {
         }
 
         String callerId = getPrincipalId(authentication);
-        if (account.getOwnerId() != null && !account.getOwnerId().equalsIgnoreCase(callerId)) {
+        if (ownerId != null && !ownerId.equalsIgnoreCase(callerId)) {
             log.warn("Access denied: user [{}] attempted to access account [{}] owned by [{}]",
-                    callerId, account.getAccountNumber(), account.getOwnerId());
+                    callerId, accountNumber, ownerId);
             throw new AccessDeniedException("Access denied: account not owned by authenticated user");
         }
     }

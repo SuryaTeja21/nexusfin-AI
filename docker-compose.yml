@@ -85,12 +85,16 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-ledger:5432/nexusfin_ledger
       SPRING_DATASOURCE_USERNAME: nexusfin
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-nexusfin_secret} # local dev only
       EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
 
   # 6. AI Fraud Detection & Audit Intelligence Service (Port 8082)
@@ -162,7 +166,23 @@ services:
       retries: 10
       start_period: 20s
 
+  # 9. Redis In-Memory Accelerator (Idempotency & Balance Read Caching)
+  redis:
+    image: redis:7-alpine
+    container_name: nexusfin-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   pg_ledger_data:
   pg_vector_data:
   kafka_data:
+  redis_data:

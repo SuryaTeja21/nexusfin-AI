@@ -31,6 +31,8 @@ eureka:
     enabled: false
 
 nexusfin:
+  redis:
+    enabled: false
   kafka:
     outbox:
       enabled: false

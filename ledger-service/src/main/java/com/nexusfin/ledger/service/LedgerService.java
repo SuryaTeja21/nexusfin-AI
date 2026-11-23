@@ -26,6 +26,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
@@ -44,6 +46,7 @@ public class LedgerService {
     private final TransactionRepository transactionRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final RedisCacheService redisCacheService;
     private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
@@ -61,12 +64,30 @@ public class LedgerService {
         log.info("Processing transaction post: ref={}, idempotencyKey={}, type={}",
                 request.getTransactionReference(), request.getIdempotencyKey(), request.getTransactionType());
 
-        // 1. Fast-path idempotency check before lock acquisition
-        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.getIdempotencyKey().trim());
+        String idempotencyKey = request.getIdempotencyKey() != null ? request.getIdempotencyKey().trim() : null;
+
+        // 1. Fast-path Redis idempotency cache check
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<TransactionResponse> cached = redisCacheService.getIdempotentResponse(idempotencyKey);
+            if (cached.isPresent()) {
+                log.info("Redis idempotency cache hit for key={}, returning cached record", idempotencyKey);
+                return cached.get();
+            }
+
+            // 2. Database idempotency check (in case Redis was cold/missed)
+            Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
-                log.info("Idempotent hit for transaction ref={}, returning existing record", existing.get().getTransactionReference());
-                return TransactionResponse.fromEntity(existing.get());
+                log.info("Database idempotency hit for key={}, updating cache and returning record", idempotencyKey);
+                TransactionResponse response = TransactionResponse.fromEntity(existing.get());
+                redisCacheService.storeIdempotentResponse(idempotencyKey, response);
+                return response;
+            }
+
+            // 3. Acquire distributed in-flight lock to block concurrent duplicate submissions
+            boolean lockAcquired = redisCacheService.acquireInFlightLock(idempotencyKey);
+            if (!lockAcquired) {
+                log.warn("Concurrent in-flight duplicate blocked for idempotency key={}", idempotencyKey);
+                throw new ConcurrentTransactionException(idempotencyKey);
             }
         }
 
@@ -75,14 +96,24 @@ public class LedgerService {
         } catch (DataIntegrityViolationException ex) {
             // Under concurrent race: PostgreSQL blocks the second inserter until the first commits.
             // On unique constraint violation, the winner has already committed. Re-read once.
-            if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
                 if (isIdempotencyConstraintViolation(ex)) {
-                    Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.getIdempotencyKey().trim());
+                    Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
                     if (existing.isPresent()) {
-                        log.info("Resolved concurrent idempotency race for key={}, returning winning record", request.getIdempotencyKey());
-                        return TransactionResponse.fromEntity(existing.get());
+                        log.info("Resolved concurrent idempotency race for key={}, returning winning record", idempotencyKey);
+                        TransactionResponse response = TransactionResponse.fromEntity(existing.get());
+                        redisCacheService.storeIdempotentResponse(idempotencyKey, response);
+                        return response;
                     }
                 }
+            }
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                redisCacheService.releaseInFlightLock(idempotencyKey);
+            }
+            throw ex;
+        } catch (Exception ex) {
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                redisCacheService.releaseInFlightLock(idempotencyKey);
             }
             throw ex;
         }
@@ -210,7 +241,7 @@ public class LedgerService {
             if (account.getStatus() != AccountStatus.ACTIVE) {
                 throw new InvalidAccountStateException(account.getAccountNumber(), account.getStatus());
             }
-            if (!account.getCurrency().equalsIgnoreCase(leg.getCurrency().trim())) {
+            if (leg.getCurrency() != null && !account.getCurrency().equalsIgnoreCase(leg.getCurrency().trim())) {
                 throw new CurrencyMismatchException(account.getCurrency(), leg.getCurrency(), account.getAccountNumber());
             }
 
@@ -225,10 +256,14 @@ public class LedgerService {
         }
 
         // 5. Build Transaction & Ledger Entries
+        TransactionType transactionType = request.getTransactionType() != null
+                ? request.getTransactionType()
+                : TransactionType.TRANSFER;
+
         Transaction transaction = Transaction.builder()
                 .transactionReference(request.getTransactionReference().trim())
                 .idempotencyKey(request.getIdempotencyKey() != null ? request.getIdempotencyKey().trim() : null)
-                .transactionType(request.getTransactionType())
+                .transactionType(transactionType)
                 .description(request.getDescription())
                 .status(TransactionStatus.POSTED)
                 .postedAt(Instant.now())
@@ -270,7 +305,37 @@ public class LedgerService {
         log.info("Transaction posted successfully: id={}, ref={}, totalVolume={}",
                 saved.getId(), saved.getTransactionReference(), totalDebits);
 
-        return TransactionResponse.fromEntity(saved);
+        TransactionResponse response = TransactionResponse.fromEntity(saved);
+
+        // Register post-commit cache synchronization (evict stale accounts & persist idempotency cache)
+        Set<String> affectedAccounts = new HashSet<>(distinctAccountNumbers);
+        String finalIdemKey = request.getIdempotencyKey() != null ? request.getIdempotencyKey().trim() : null;
+
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    redisCacheService.evictAccounts(affectedAccounts);
+                    if (finalIdemKey != null && !finalIdemKey.isBlank()) {
+                        redisCacheService.storeIdempotentResponse(finalIdemKey, response);
+                    }
+                }
+
+                @Override
+                public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED && finalIdemKey != null && !finalIdemKey.isBlank()) {
+                        redisCacheService.releaseInFlightLock(finalIdemKey);
+                    }
+                }
+            });
+        } else {
+            redisCacheService.evictAccounts(affectedAccounts);
+            if (finalIdemKey != null && !finalIdemKey.isBlank()) {
+                redisCacheService.storeIdempotentResponse(finalIdemKey, response);
+            }
+        }
+
+        return response;
     }
 
     /**

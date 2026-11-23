@@ -80,6 +80,12 @@
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
+        <!-- Spring Boot Starter Data Redis (In-Memory Acceleration) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- Spring Security Test -->
         <dependency>
             <groupId>org.springframework.security</groupId>

@@ -51,6 +51,9 @@ class LedgerServiceUnitTest {
     private AccountRepository accountRepository;
 
     @Mock
+    private AccountService accountService;
+
+    @Mock
     private TransactionRepository transactionRepository;
 
     @Mock
@@ -58,6 +61,9 @@ class LedgerServiceUnitTest {
 
     @Mock
     private OutboxEventRepository outboxEventRepository;
+
+    @Mock
+    private RedisCacheService redisCacheService;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -73,6 +79,9 @@ class LedgerServiceUnitTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(redisCacheService.getIdempotentResponse(any())).thenReturn(Optional.empty());
+        lenient().when(redisCacheService.acquireInFlightLock(any())).thenReturn(true);
+
         // By default, if transactionTemplate is called, execute the callback directly
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
