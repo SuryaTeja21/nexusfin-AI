@@ -38,7 +38,9 @@ public class SecurityConfig {
                                 "/actuator/info",
                                 "/fallback/**",
                                 "/swagger-ui/**",
-                                "/v3/api-docs/**"
+                                "/v3/api-docs/**",
+                                "/ws",
+                                "/ws/**"
                         ).permitAll()
 
                         // Chart of Accounts Management:

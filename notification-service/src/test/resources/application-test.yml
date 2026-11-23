@@ -1,0 +1,27 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: notification-service-test
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://auth.nexusfin.io/realms/nexusfin
+  kafka:
+    consumer:
+      group-id: notification-test-group
+      auto-offset-reset: earliest
+
+nexusfin:
+  kafka:
+    topics:
+      ledger-transactions: nexusfin.ledger.transactions
+  redis:
+    channels:
+      notifications-transactions: nexusfin.notifications.transactions
+
+eureka:
+  client:
+    enabled: false

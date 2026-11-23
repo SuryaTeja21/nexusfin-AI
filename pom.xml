@@ -23,6 +23,7 @@
         <module>api-gateway</module>
         <module>ledger-service</module>
         <module>ai-fraud-service</module>
+        <module>notification-service</module>
     </modules>
 
     <properties>

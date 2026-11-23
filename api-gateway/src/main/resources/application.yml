@@ -54,6 +54,12 @@ spring:
                 name: fraudCircuitBreaker
                 fallbackUri: forward:/fallback/fraud
 
+        # Route: Real-Time WebSocket & STOMP Notifications Feed
+        - id: notification-service-ws
+          uri: lb:ws://notification-service
+          predicates:
+            - Path=/ws/**
+
       globalcors:
         cors-configurations:
           '[/**]':

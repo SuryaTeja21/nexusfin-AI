@@ -41,8 +41,8 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ---
 
 ## Phase 4: Real-Time WebSocket/STOMP Feed
-- [ ] **#4.1**: Build `notification-service` module consuming Kafka events with Redis Pub/Sub fan-out and STOMP endpoints.
-- [ ] **#4.2**: Add WebSocket/STOMP integration tests with authenticated sessions and channel authorization.
+- [x] **#4.1**: Build `notification-service` module consuming Kafka events with Redis Pub/Sub fan-out and STOMP endpoints.
+- [x] **#4.2**: Add WebSocket/STOMP integration tests with authenticated sessions, channel authorization, and ADR-007.
 
 ---
 

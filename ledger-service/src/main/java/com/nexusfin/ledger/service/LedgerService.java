@@ -473,6 +473,7 @@ public class LedgerService {
                 map.put("amount", leg.getAmount());
                 map.put("currency", leg.getCurrency());
                 map.put("newBalance", acc.getBalance());
+                map.put("ownerId", acc.getOwnerId());
                 return map;
             }).collect(Collectors.toList());
 
