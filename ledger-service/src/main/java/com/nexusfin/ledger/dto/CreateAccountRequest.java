@@ -34,4 +34,6 @@ public class CreateAccountRequest {
     private String currency;
 
     private BigDecimal initialBalance;
+
+    private String ownerId;
 }

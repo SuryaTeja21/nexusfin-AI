@@ -28,6 +28,7 @@ public class AccountResponse {
     private Instant createdAt;
     private Instant updatedAt;
     private Long version;
+    private String ownerId;
 
     public static AccountResponse fromEntity(Account account) {
         return AccountResponse.builder()
@@ -41,6 +42,7 @@ public class AccountResponse {
                 .createdAt(account.getCreatedAt())
                 .updatedAt(account.getUpdatedAt())
                 .version(account.getVersion())
+                .ownerId(account.getOwnerId())
                 .build();
     }
 }

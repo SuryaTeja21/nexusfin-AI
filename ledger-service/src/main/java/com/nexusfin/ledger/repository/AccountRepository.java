@@ -19,6 +19,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     Optional<Account> findByAccountNumber(String accountNumber);
 
+    List<Account> findByOwnerId(String ownerId);
+
     List<Account> findByAccountNumberIn(Collection<String> accountNumbers);
 
     @Query("SELECT a.accountNumber AS accountNumber, a.id AS id, a.accountType AS accountType FROM Account a WHERE a.accountNumber IN :accountNumbers")

@@ -23,6 +23,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -38,6 +40,7 @@ import java.util.stream.Collectors;
 public class LedgerService {
 
     private final AccountRepository accountRepository;
+    private final AccountService accountService;
     private final TransactionRepository transactionRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
     private final OutboxEventRepository outboxEventRepository;
@@ -198,7 +201,10 @@ public class LedgerService {
         Map<String, Account> lockedAccountMap = lockedAccounts.stream()
                 .collect(Collectors.toMap(Account::getAccountNumber, Function.identity()));
 
-        // 4. Validate accounts state and currencies
+        // 4. Validate accounts state, currencies, and multi-tenant caller ownership
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isCustomer = auth != null && auth.isAuthenticated() && !accountService.isSystemOrAdmin(auth);
+
         for (TransactionLegRequest leg : legs) {
             Account account = lockedAccountMap.get(leg.getAccountNumber().trim());
             if (account.getStatus() != AccountStatus.ACTIVE) {
@@ -206,6 +212,15 @@ public class LedgerService {
             }
             if (!account.getCurrency().equalsIgnoreCase(leg.getCurrency().trim())) {
                 throw new CurrencyMismatchException(account.getCurrency(), leg.getCurrency(), account.getAccountNumber());
+            }
+
+            // A customer can only decrease balances on accounts they own
+            if (isCustomer) {
+                boolean decreasesBalance = (account.getAccountType().getNormalBalance() == EntryType.DEBIT && leg.getEntryType() == EntryType.CREDIT)
+                        || (account.getAccountType().getNormalBalance() == EntryType.CREDIT && leg.getEntryType() == EntryType.DEBIT);
+                if (decreasesBalance) {
+                    accountService.verifyAccountOwnership(account, auth);
+                }
             }
         }
 
@@ -364,6 +379,10 @@ public class LedgerService {
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<LedgerEntryResponse> getEntriesByAccountId(UUID accountId) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
+        accountService.verifyAccountOwnership(account, SecurityContextHolder.getContext().getAuthentication());
+
         return ledgerEntryRepository.findByAccountIdOrderByCreatedAtDesc(accountId).stream()
                 .map(LedgerEntryResponse::fromEntity)
                 .collect(Collectors.toList());

@@ -47,6 +47,9 @@ public class Account {
     @Builder.Default
     private BigDecimal balance = BigDecimal.ZERO.setScale(4);
 
+    @Column(name = "owner_id", length = 64)
+    private String ownerId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
     @Builder.Default
