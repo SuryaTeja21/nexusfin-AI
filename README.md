@@ -2,6 +2,8 @@
 
 **Cloud-native, event-driven banking ledger and real-time fraud platform built with Java 21 Virtual Threads, Spring Boot 3.2, Apache Kafka, PostgreSQL 16, Redis, Keycloak PKCE, and Angular 22.**
 
+**Live Interactive UI Demo:** [https://nexusfin-ai-nine.vercel.app](https://nexusfin-ai-nine.vercel.app) *(Vercel Interactive Sandbox — simulates double-entry transfers, live feed events, heuristic fraud triage, and `.DLT` replay in-browser; run `docker compose up -d` locally for live Spring Boot, PostgreSQL, Kafka, Redis & Keycloak services).*
+
 > Strictly enforces double-entry accounting invariants ($\sum \text{Debits} = \sum \text{Credits}$), deterministic batch pessimistic row locking (`ORDER BY id ASC`), transactional outbox publishing (`SKIP LOCKED`), idempotent Kafka consumers with `.DLT` quarantine, Redis caching + `SET NX` in-flight locks, OpenTelemetry/Prometheus observability, and real-time STOMP WebSocket push updates.
 
 ---
