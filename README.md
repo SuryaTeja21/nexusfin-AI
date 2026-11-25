@@ -72,14 +72,14 @@ To provide complete transparency for engineering reviews and production readines
 | **Event Streaming (Kafka)** | **Implemented** | Real-time `nexusfin.ledger.transactions` event publication and consumption with transactional commit safety. |
 | **Idempotent Kafka Consumer** | **Implemented** | `ai-fraud-service` deduplication table (`processed_events`) preventing duplicate processing and duplicate audit logs. |
 | **Dual AI/Rule Fraud Engine** | **Implemented** | OpenAI / Spring AI integration with strict JSON schema parsing; automatic fallback to deterministic heuristic rules on timeout or LLM error. |
-| **Schema Migrations** | **Implemented** | Flyway managed schemas across all services (`ledger-service` V1-V3, `ai-fraud-service` V1-V2) with `ddl-auto: validate`. |
-| **Integration Concurrency Tests** | **Implemented** | Full Testcontainers integration suite (PostgreSQL 16, Kafka 3.7) testing opposing transfers, random pairs, outbox concurrency, and consumer idempotency. |
-| **API Gateway Routing & Resilience** | **Implemented** | Path routing, correlation ID injection, API key security filter, and Resilience4j circuit breaker with `/fallback/ledger` degradation. |
-| **Keycloak OAuth2 / OIDC PKCE** | **Implemented** | Keycloak realm (`nexusfin`), reactive resource server on gateway, defense-in-depth resource server on `ledger-service`, tenant isolation via `owner_id`. |
+| **Schema Migrations** | **Implemented** | Flyway managed schemas across all services (`ledger-service` V1-V5, `ai-fraud-service` V1-V2) with `ddl-auto: validate`. |
+| **Integration Concurrency Tests** | **Implemented** | Full Testcontainers integration suite (PostgreSQL 16, Kafka 3.7, Redis 7) testing opposing transfers, random pairs, outbox concurrency, and consumer idempotency. |
+| **API Gateway Routing & Resilience** | **Implemented** | Path routing, correlation ID injection, Resilience4j circuit breaker + bulkheads, GET retries, and `/fallback/ledger` degradation. |
+| **Keycloak OAuth2 / OIDC PKCE** | **Implemented** | Keycloak realm (`nexusfin`), reactive resource server on gateway, defense-in-depth resource server on `ledger-service` and `notification-service`, tenant isolation via `owner_id`. |
 | **Redis Caching & Distributed Locks** | **Implemented** | Sub-millisecond idempotency cache hits, `SET NX` in-flight lock preventing duplicate concurrent transfers, post-commit balance eviction. |
 | **WebSocket / STOMP Live Feed** | **Implemented** | `notification-service` with authenticated STOMP endpoint (`/ws`), admin broadcast (`/topic/transactions`), customer queue (`/user/queue/transactions`), and Redis Pub/Sub cluster fan-out. |
 | **Dead-Letter Topic (.DLT) Quarantine** | **Implemented** | `DefaultErrorHandler` with non-retryable exception classification routing poison messages immediately to `nexusfin.ledger.transactions.DLT`, admin visibility endpoint (`/api/v1/fraud/dlt/messages`), one-click replay, and `dlt.messages` Micrometer metrics. |
-| **Distributed Tracing & Dashboards** | *Planned (Phase 6)* | Basic correlation IDs and Micrometer health metrics active. OpenTelemetry and Grafana stack scheduled for Phase 6. |
+| **Full-Stack Observability & Tracing** | **Implemented** | Prometheus `/actuator/prometheus` on all 5 services with HTTP p95/p99 histograms, custom outbox/DLT/cache gauges & counters, Micrometer Tracing + OpenTelemetry OTLP to Grafana Tempo, W3C `traceparent` + `X-Correlation-Id` propagation across WebFlux/MVC/Outbox/Kafka, structured JSON logging, and provisioned Grafana dashboard (`docker-compose.observability.yml`). |
 | **k6 Load Benchmarks** | *Planned (Phase 7)* | Concurrency verified via JUnit Testcontainers. Formal k6 automated load benchmarks scheduled for Phase 7. |
 | **PGVector Semantic Search** | *Future Enhancement* | Audit logs are stored in PostgreSQL; semantic vector indexing for AML similarity clusters is not yet active. |
 
@@ -90,7 +90,8 @@ To provide complete transparency for engineering reviews and production readines
 ```text
 nexusfin-ai/
 ├── pom.xml                                      # Multi-Module Parent POM (Spring Boot 3.2.5, Spring Cloud 2023, Spring AI 0.8.1)
-├── docker-compose.yml                           # Full stack orchestration (PostgreSQL 16, Kafka, Microservices)
+├── docker-compose.yml                           # Full stack orchestration (PostgreSQL 16, Kafka, Redis, Keycloak, Microservices)
+├── docker-compose.observability.yml             # Observability overlay (Prometheus, Grafana Tempo, Grafana)
 ├── discovery-server/                            # Netflix Eureka Service Registry (Port 8761)
 │   ├── src/main/java/com/nexusfin/discovery/
 │   └── src/main/resources/application.yml
@@ -112,20 +113,26 @@ nexusfin-ai/
 │   ├── src/main/resources/db/migration/         # Flyway Migrations (PostgreSQL 16)
 │   │   ├── V1__init_ledger_schema.sql
 │   │   ├── V2__seed_chart_of_accounts.sql
-│   │   └── V3__transactional_outbox.sql
+│   │   ├── V3__create_outbox_table.sql
+│   │   ├── V4__add_account_owner_id.sql
+│   │   └── V5__add_outbox_trace_context.sql
 │   └── src/test/                                # Concurrency ITs & Testcontainers test suite
-└── ai-fraud-service/                            # AI Fraud Intelligence Microservice (Port 8082)
-    ├── src/main/java/com/nexusfin/fraud/
-    │   ├── consumer/TransactionEventListener.java # Idempotent Kafka consumer
-    │   ├── controller/FraudDetectionController.java # Evaluation and audit log endpoints
-    │   ├── domain/entity/                       # AuditLogEntry, ProcessedEvent
-    │   ├── dto/                                 # Evaluation Request, Response, Event DTOs
-    │   ├── repository/                          # AuditLogRepository, ProcessedEventRepository
-    │   └── service/AiFraudDetectionService.java # Dual Spring AI + Heuristic rule engine
-    ├── src/main/resources/db/migration/         # Flyway Migrations (PostgreSQL 16)
-    │   ├── V1__fraud_audit_log.sql
-    │   └── V2__processed_events.sql
-    └── src/test/                                # Testcontainers Flyway schema & Idempotency tests
+├── ai-fraud-service/                            # AI Fraud Intelligence Microservice (Port 8082)
+│   ├── src/main/java/com/nexusfin/fraud/
+│   │   ├── consumer/TransactionEventListener.java # Idempotent Kafka consumer & DLT quarantine
+│   │   ├── controller/FraudDetectionController.java # Evaluation and audit log endpoints
+│   │   ├── domain/entity/                       # AuditLogEntry, ProcessedEvent
+│   │   ├── dto/                                 # Evaluation Request, Response, Event DTOs
+│   │   ├── repository/                          # AuditLogRepository, ProcessedEventRepository
+│   │   └── service/AiFraudDetectionService.java # Dual Spring AI + Heuristic rule engine
+│   ├── src/main/resources/db/migration/         # Flyway Migrations (PostgreSQL 16)
+│   │   ├── V1__fraud_audit_log.sql
+│   │   └── V2__processed_events.sql
+│   └── src/test/                                # Testcontainers Flyway schema & Idempotency tests
+├── notification-service/                        # Real-Time WebSocket/STOMP Service with Redis Fan-Out (Port 8084)
+└── infra/
+    ├── keycloak/                                # Pre-configured OAuth2 / OIDC Realm Import
+    └── observability/                           # Prometheus, Tempo, and Grafana Dashboards & Provisioning
 ```
 
 ---
@@ -179,6 +186,21 @@ NexusFin AI incorporates zero-trust, defense-in-depth failure resilience to isol
 | **Quarantined Message Inspection & Recovery** | AI Fraud Service | In-memory `DltMessageStore` indexing all DLT events with metadata | `GET /api/v1/fraud/dlt/messages` (admin inspect) and `POST /api/v1/fraud/dlt/replay/{id}` (re-injects to Kafka) |
 | **Concurrent In-Flight Duplicate Transfer** | Ledger Service | Redis `SET NX` distributed lock on `idempotency_key` | Immediate HTTP 409 Conflict rejection; protects DB connection pool |
 | **Redis Outage** | Ledger / Notification | Fail-open fallback: cache failure logs warning and degrades directly to PostgreSQL / local routing | Business transactions proceed uninterrupted directly against PostgreSQL |
+
+### 4.7 Full-Stack Observability (Prometheus, Grafana Tempo, OpenTelemetry & JSON Logging)
+- **Prometheus Metrics**: Every microservice exposes `/actuator/prometheus` with `http.server.requests` percentile histograms (`p95`/`p99`), plus domain metrics `outbox.pending.events` (`OutboxMetricsConfig`), `dlt.messages` / `dlt.quarantined.active`, and Redis `idempotency.cache.*` / `account.balance.cache.*`.
+- **Distributed Tracing & `X-Correlation-Id` Baggage**: `Micrometer Tracing` + `opentelemetry-exporter-otlp` ships spans to **Grafana Tempo** (`http://tempo:4318/v1/traces`). `CorrelationIdGlobalFilter` (`ReactorBaggage` + `ObservationAwareBaggageThreadLocalAccessor`), `CorrelationIdMdcFilter`, `OutboxEvent` (`V5__add_outbox_trace_context.sql`), and Kafka `observation-enabled` propagate `traceparent` and `X-Correlation-Id` seamlessly from Gateway -> Ledger -> Outbox -> Kafka -> AI Fraud & Notification consumers.
+- **Structured JSON Logging**: Unified `logback-spring.xml` (`LogstashEncoder`) outputs JSON logs tagged with `service`, `level`, `logger`, `thread`, `traceId`, `spanId`, and `X-Correlation-Id`.
+- **Local Observability Stack**:
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+  ```
+  - **Grafana**: `http://localhost:3000` (`admin` / `admin`) — auto-provisions Prometheus, Tempo, and `NexusFin AI — Observability Overview` dashboard.
+  - **Prometheus**: `http://localhost:9090`
+
+![Grafana Observability Dashboard](docs/images/grafana-observability-dashboard.png)
+
+![Grafana Tempo Distributed Trace](docs/images/grafana-tempo-distributed-trace.png)
 
 ---
 
@@ -301,11 +323,11 @@ docker compose logs -f ledger-service ai-fraud-service api-gateway
   - [x] Flyway migrations across all services (`ledger-service` V1-V3, `ai-fraud-service` V1-V2).
   - [x] Idempotent Kafka consumer with `processed_events` deduplication store.
   - [x] Comprehensive documentation and architecture truth pass.
-- [ ] **Phase 2: Authentication & Authorization**: Keycloak OAuth2 / OIDC PKCE resource server on API Gateway with tenant account ownership (`owner_id`) checks.
-- [ ] **Phase 3: High-Performance Caching**: Redis idempotency caching and account-balance read-through caching with post-commit eviction.
-- [ ] **Phase 4: Real-Time Notifications**: WebSocket/STOMP push service consuming Kafka events with Redis fan-out.
-- [ ] **Phase 5: Advanced Resilience**: Kafka consumer retry with Dead-Letter Topic (`.DLT`) for poison messages and Micrometer metrics.
-- [ ] **Phase 6: Full-Stack Observability**: Prometheus metrics, Grafana dashboards, and OpenTelemetry distributed tracing.
+- [x] **Phase 2: Authentication & Authorization**: Keycloak OAuth2 / OIDC PKCE resource server on API Gateway with tenant account ownership (`owner_id`) checks.
+- [x] **Phase 3: High-Performance Caching**: Redis idempotency caching and account-balance read-through caching with post-commit eviction.
+- [x] **Phase 4: Real-Time Notifications**: WebSocket/STOMP push service consuming Kafka events with Redis fan-out.
+- [x] **Phase 5: Advanced Resilience**: Kafka consumer retry with Dead-Letter Topic (`.DLT`) for poison messages and Micrometer metrics.
+- [x] **Phase 6: Full-Stack Observability**: Prometheus metrics, Grafana dashboards, OpenTelemetry/Tempo distributed tracing, and structured JSON logging.
 - [ ] **Phase 7: Load Testing**: Automated k6 performance benchmarks under high contention.
 - [ ] **Phase 8: Frontend Dashboard**: Angular standalone client with Keycloak PKCE login and live transaction ledger feed.
 - [ ] **Phase 9: Production Release**: AWS Terraform infrastructure, CI/CD deployment pipeline, and `v1.0.0` release.

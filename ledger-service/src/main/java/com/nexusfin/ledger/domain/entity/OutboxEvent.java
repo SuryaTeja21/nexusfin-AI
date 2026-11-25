@@ -56,6 +56,12 @@ public class OutboxEvent {
     @Column(name = "processed_at")
     private Instant processedAt;
 
+    @Column(name = "correlation_id", length = 128)
+    private String correlationId;
+
+    @Column(name = "trace_parent", length = 256)
+    private String traceParent;
+
     @PrePersist
     public void prePersist() {
         if (id == null) {

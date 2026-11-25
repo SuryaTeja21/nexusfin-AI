@@ -55,10 +55,10 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ---
 
 ## Phase 6: Observability
-- [ ] **#6.1**: Instrument Prometheus endpoints on all services via Micrometer.
-- [ ] **#6.2**: Add Prometheus & Grafana stack (`docker-compose.observability.yml`) with pre-provisioned dashboards.
-- [ ] **#6.3**: Configure distributed tracing via Micrometer Tracing and OpenTelemetry.
-- [ ] **#6.4**: Standardize structured JSON logging with MDC correlation IDs.
+- [x] **#6.1**: Instrument Prometheus endpoints on all services via Micrometer.
+- [x] **#6.2**: Add Prometheus & Grafana stack (`docker-compose.observability.yml`) with pre-provisioned dashboards.
+- [x] **#6.3**: Configure distributed tracing via Micrometer Tracing and OpenTelemetry.
+- [x] **#6.4**: Standardize structured JSON logging with MDC correlation IDs.
 
 ---
 

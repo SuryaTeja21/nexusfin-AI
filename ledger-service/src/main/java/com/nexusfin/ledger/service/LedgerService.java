@@ -18,10 +18,15 @@ import com.nexusfin.ledger.repository.LedgerEntryRepository;
 import com.nexusfin.ledger.repository.OutboxEventRepository;
 import com.nexusfin.ledger.repository.TransactionRepository;
 import com.nexusfin.ledger.repository.projection.AccountIdProjection;
+import io.micrometer.tracing.Baggage;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -50,6 +55,12 @@ public class LedgerService {
     private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
+
+    @Autowired(required = false)
+    private Tracer tracer;
+
+    @Autowired(required = false)
+    private Propagator propagator;
 
     /**
      * Posts a multi-leg double-entry transaction atomically.
@@ -479,6 +490,9 @@ public class LedgerService {
 
             eventPayload.put("legs", legSummaries);
 
+            String correlationId = resolveCurrentCorrelationId();
+            String traceParent = captureCurrentTraceParent();
+
             OutboxEvent outboxEvent = OutboxEvent.builder()
                     .aggregateType("TRANSACTION")
                     .aggregateId(transaction.getId().toString())
@@ -486,6 +500,8 @@ public class LedgerService {
                     .payload(objectMapper.writeValueAsString(eventPayload))
                     .status(OutboxStatus.PENDING)
                     .retryCount(0)
+                    .correlationId(correlationId)
+                    .traceParent(traceParent)
                     .build();
 
             outboxEventRepository.save(outboxEvent);
@@ -494,5 +510,29 @@ public class LedgerService {
                     transaction.getId(), e.getMessage(), e);
             throw new LedgerException("Failed to record outbox event: " + e.getMessage());
         }
+    }
+
+    private String resolveCurrentCorrelationId() {
+        String mdcVal = MDC.get("X-Correlation-Id");
+        if (mdcVal != null && !mdcVal.isBlank()) {
+            return mdcVal;
+        }
+        if (tracer != null) {
+            Baggage baggage = tracer.getBaggage("X-Correlation-Id");
+            String val = baggage != null ? baggage.get() : null;
+            if (val != null && !val.isBlank()) {
+                return val;
+            }
+        }
+        return null;
+    }
+
+    private String captureCurrentTraceParent() {
+        if (tracer == null || propagator == null || tracer.currentSpan() == null) {
+            return null;
+        }
+        Map<String, String> carrier = new HashMap<>();
+        propagator.inject(tracer.currentSpan().context(), carrier, Map::put);
+        return carrier.get("traceparent");
     }
 }

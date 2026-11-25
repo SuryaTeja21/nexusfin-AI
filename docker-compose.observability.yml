@@ -1,0 +1,99 @@
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# Services exposed:
+#   - Prometheus: http://localhost:9090
+#   - Grafana:    http://localhost:3000 (admin / admin)
+#   - Tempo API:  http://localhost:3200 (OTLP HTTP: 4318, OTLP gRPC: 4317)
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: nexusfin-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=24h'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    mem_limit: 256m
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    container_name: nexusfin-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    user: "0"
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./infra/observability/tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    mem_limit: 256m
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: nexusfin-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./infra/observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infra/observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - tempo
+    mem_limit: 256m
+
+  # Inject OpenTelemetry OTLP exporter endpoint into core microservices when observability stack is active
+  discovery-server:
+    environment:
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+
+  api-gateway:
+    environment:
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+    depends_on:
+      tempo:
+        condition: service_started
+
+  ledger-service:
+    environment:
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+    depends_on:
+      tempo:
+        condition: service_started
+
+  ai-fraud-service:
+    environment:
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+    depends_on:
+      tempo:
+        condition: service_started
+
+  notification-service:
+    environment:
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+    depends_on:
+      tempo:
+        condition: service_started
+
+volumes:
+  prometheus_data:
+  tempo_data:
+  grafana_data:

@@ -4,6 +4,9 @@ spring:
   threads:
     virtual:
       enabled: true
+  kafka:
+    template:
+      observation-enabled: true
 
   security:
     oauth2:
@@ -35,3 +38,26 @@ eureka:
 nexusfin:
   redis:
     enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+    baggage:
+      enabled: true
+      remote-fields:
+        - X-Correlation-Id
+      correlation:
+        enabled: true
+        fields:
+          - X-Correlation-Id

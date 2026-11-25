@@ -1,6 +1,8 @@
 spring:
   application:
     name: api-gateway-test
+  reactor:
+    context-propagation: auto
   security:
     oauth2:
       resourceserver:

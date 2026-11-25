@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -33,6 +34,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
 @DirtiesContext
+@AutoConfigureObservability
 @TestPropertySource(properties = {
         "nexusfin.kafka.outbox.enabled=true",
         "nexusfin.kafka.outbox.poll-interval-ms=100000",
@@ -173,6 +175,56 @@ class OutboxPublisherServiceIT extends AbstractPostgresIT {
                 .withFailMessage("Expected status PUBLISHED immediately after dispatchPendingEvents() returns, but was %s", updated.getStatus())
                 .isEqualTo(OutboxStatus.PUBLISHED);
         assertThat(updated.getProcessedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("6.3 Outbox dispatch propagates traceparent and X-Correlation-Id baggage headers to Kafka")
+    void outboxDispatchPropagatesTraceContextToKafka() {
+        String upstreamTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        String traceParent = "00-" + upstreamTraceId + "-00f067aa0ba902b7-01";
+        String correlationId = "CORR-OUTBOX-TRACE-999";
+
+        OutboxEvent event = OutboxEvent.builder()
+                .aggregateType("TRANSACTION")
+                .aggregateId("TX-TRACE-" + UUID.randomUUID().toString().substring(0, 8))
+                .eventType("TRANSACTION_POSTED")
+                .payload("{\"test\":\"trace\"}")
+                .status(OutboxStatus.PENDING)
+                .retryCount(0)
+                .correlationId(correlationId)
+                .traceParent(traceParent)
+                .build();
+        event = outboxEventRepository.save(event);
+
+        KafkaConsumer<String, String> consumer = createConsumer("test-trace-group-" + UUID.randomUUID());
+        consumer.subscribe(Collections.singletonList("nexusfin.ledger.transactions"));
+        consumer.poll(Duration.ofMillis(500));
+
+        outboxPublisherService.dispatchPendingEvents();
+
+        String receivedTraceParent = null;
+        String receivedBaggage = null;
+        long deadline = System.currentTimeMillis() + 10000;
+        while (System.currentTimeMillis() < deadline && receivedTraceParent == null) {
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(500));
+            for (var rec : records) {
+                if (event.getAggregateId().equals(rec.key())) {
+                    var tpHeader = rec.headers().lastHeader("traceparent");
+                    var bgHeader = rec.headers().lastHeader("baggage");
+                    if (tpHeader != null) {
+                        receivedTraceParent = new String(tpHeader.value(), java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                    if (bgHeader != null) {
+                        receivedBaggage = new String(bgHeader.value(), java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                }
+            }
+        }
+        consumer.close();
+
+        assertThat(receivedTraceParent).isNotNull();
+        assertThat(receivedTraceParent).contains(upstreamTraceId);
+        assertThat(receivedBaggage).contains("X-Correlation-Id=" + correlationId);
     }
 
     private KafkaConsumer<String, String> createConsumer(String groupId) {

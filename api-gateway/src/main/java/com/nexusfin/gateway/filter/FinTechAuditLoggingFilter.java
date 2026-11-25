@@ -21,19 +21,21 @@ public class FinTechAuditLoggingFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        long startTime = System.currentTimeMillis();
-        String path = exchange.getRequest().getURI().getPath();
-        String method = exchange.getRequest().getMethod().name();
-        String correlationId = exchange.getRequest().getHeaders().getFirst(CorrelationIdGlobalFilter.CORRELATION_ID_HEADER);
+        return Mono.defer(() -> {
+            long startTime = System.currentTimeMillis();
+            String path = exchange.getRequest().getURI().getPath();
+            String method = exchange.getRequest().getMethod().name();
+            String correlationId = exchange.getRequest().getHeaders().getFirst(CorrelationIdGlobalFilter.CORRELATION_ID_HEADER);
 
-        log.info("[GATEWAY-INBOUND] CorrelationId: {} | Method: {} | Path: {}", correlationId, method, path);
+            log.info("[GATEWAY-INBOUND] CorrelationId: {} | Method: {} | Path: {}", correlationId, method, path);
 
-        return chain.filter(exchange).then(Mono.fromRunnable(() -> {
-            long duration = System.currentTimeMillis() - startTime;
-            HttpStatusCode status = exchange.getResponse().getStatusCode();
-            log.info("[GATEWAY-OUTBOUND] CorrelationId: {} | Status: {} | Duration: {}ms",
-                    correlationId, status != null ? status.value() : "UNKNOWN", duration);
-        }));
+            return chain.filter(exchange).then(Mono.fromRunnable(() -> {
+                long duration = System.currentTimeMillis() - startTime;
+                HttpStatusCode status = exchange.getResponse().getStatusCode();
+                log.info("[GATEWAY-OUTBOUND] CorrelationId: {} | Status: {} | Duration: {}ms",
+                        correlationId, status != null ? status.value() : "UNKNOWN", duration);
+            }));
+        });
     }
 
     @Override

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureObservability
 @Import(TestSecurityConfig.class)
 @DisplayName("Phase 4: Real-time WebSocket/STOMP & Redis Fan-Out Integration Tests")
 public class NotificationServiceIT {
@@ -329,5 +331,24 @@ public class NotificationServiceIT {
         assertThat(session.isConnected()).isTrue();
 
         session.disconnect();
+    }
+
+    @Test
+    @DisplayName("6.1 Notification Service exposes /actuator/prometheus without auth and echoes X-Correlation-Id")
+    void testPrometheusEndpointAndCorrelationHeader() {
+        org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.set("X-Correlation-Id", "CORR-NOTIFY-PROM-1");
+
+        org.springframework.http.ResponseEntity<String> response = restTemplate.exchange(
+                "http://localhost:" + port + "/actuator/prometheus",
+                org.springframework.http.HttpMethod.GET,
+                new org.springframework.http.HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getHeaders().getFirst("X-Correlation-Id")).isEqualTo("CORR-NOTIFY-PROM-1");
+        assertThat(response.getBody()).contains("jvm_memory_used_bytes");
     }
 }

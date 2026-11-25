@@ -30,4 +30,6 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
     List<OutboxEvent> findPendingEvents(@Param("status") OutboxStatus status, Pageable pageable);
 
     List<OutboxEvent> findByAggregateId(String aggregateId);
+
+    long countByStatus(OutboxStatus status);
 }
