@@ -80,7 +80,7 @@ To provide complete transparency for engineering reviews and production readines
 | **WebSocket / STOMP Live Feed** | **Implemented** | `notification-service` with authenticated STOMP endpoint (`/ws`), admin broadcast (`/topic/transactions`), customer queue (`/user/queue/transactions`), and Redis Pub/Sub cluster fan-out. |
 | **Dead-Letter Topic (.DLT) Quarantine** | **Implemented** | `DefaultErrorHandler` with non-retryable exception classification routing poison messages immediately to `nexusfin.ledger.transactions.DLT`, admin visibility endpoint (`/api/v1/fraud/dlt/messages`), one-click replay, and `dlt.messages` Micrometer metrics. |
 | **Full-Stack Observability & Tracing** | **Implemented** | Prometheus `/actuator/prometheus` on all 5 services with HTTP p95/p99 histograms, custom outbox/DLT/cache gauges & counters, Micrometer Tracing + OpenTelemetry OTLP to Grafana Tempo, W3C `traceparent` + `X-Correlation-Id` propagation across WebFlux/MVC/Outbox/Kafka, structured JSON logging, and provisioned Grafana dashboard (`docker-compose.observability.yml`). |
-| **k6 Load Benchmarks** | *Planned (Phase 7)* | Concurrency verified via JUnit Testcontainers. Formal k6 automated load benchmarks scheduled for Phase 7. |
+| **k6 Load Benchmarks** | **Implemented** | Automated `k6` load suite in `perf/` (unique transfers, opposing hot-pair contention, mixed 80/20 read/write, duplicate idempotency replay) with Redis ON/OFF comparison documented in [`docs/benchmarks/BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md). |
 | **PGVector Semantic Search** | *Future Enhancement* | Audit logs are stored in PostgreSQL; semantic vector indexing for AML similarity clusters is not yet active. |
 
 ---
@@ -130,6 +130,7 @@ nexusfin-ai/
 │   │   └── V2__processed_events.sql
 │   └── src/test/                                # Testcontainers Flyway schema & Idempotency tests
 ├── notification-service/                        # Real-Time WebSocket/STOMP Service with Redis Fan-Out (Port 8084)
+├── perf/                                        # k6 Load Testing Scripts (Unique, Hot-Pair, Mixed, Idempotency Replay)
 └── infra/
     ├── keycloak/                                # Pre-configured OAuth2 / OIDC Realm Import
     └── observability/                           # Prometheus, Tempo, and Grafana Dashboards & Provisioning
@@ -328,6 +329,6 @@ docker compose logs -f ledger-service ai-fraud-service api-gateway
 - [x] **Phase 4: Real-Time Notifications**: WebSocket/STOMP push service consuming Kafka events with Redis fan-out.
 - [x] **Phase 5: Advanced Resilience**: Kafka consumer retry with Dead-Letter Topic (`.DLT`) for poison messages and Micrometer metrics.
 - [x] **Phase 6: Full-Stack Observability**: Prometheus metrics, Grafana dashboards, OpenTelemetry/Tempo distributed tracing, and structured JSON logging.
-- [ ] **Phase 7: Load Testing**: Automated k6 performance benchmarks under high contention.
+- [x] **Phase 7: Load Testing**: Automated k6 performance benchmarks under high contention ([`BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md)).
 - [ ] **Phase 8: Frontend Dashboard**: Angular standalone client with Keycloak PKCE login and live transaction ledger feed.
 - [ ] **Phase 9: Production Release**: AWS Terraform infrastructure, CI/CD deployment pipeline, and `v1.0.0` release.

@@ -63,8 +63,8 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ---
 
 ## Phase 7: Load Testing and Benchmarks
-- [ ] **#7.1**: Write k6 load test scripts covering transfers, hot accounts, and duplicate idempotency keys.
-- [ ] **#7.2**: Execute benchmarks and commit raw results, bottleneck analysis, and hardware specifications to `docs/benchmarks/BENCHMARKS.md`.
+- [x] **#7.1**: Write k6 load test scripts covering transfers, hot accounts, and duplicate idempotency keys.
+- [x] **#7.2**: Execute benchmarks and commit raw results, bottleneck analysis, and hardware specifications to `docs/benchmarks/BENCHMARKS.md`.
 
 ---
 
