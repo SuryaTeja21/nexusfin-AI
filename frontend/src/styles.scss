@@ -602,3 +602,23 @@ td.num {
   font-size: 1.1rem;
   cursor: pointer;
 }
+
+.sandbox-ribbon {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #fde68a;
+  padding: 0.45rem 1.25rem;
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.demo-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.sandbox-alt {
+  margin-top: 0.85rem;
+}

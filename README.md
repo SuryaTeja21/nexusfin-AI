@@ -58,12 +58,16 @@ With observability enabled ([Prometheus](http://localhost:9090), [Grafana `admin
 docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 ```
 
-### Deploy Free Hybrid Cloud (Vercel Frontend + Oracle Cloud Always Free ARM64 Backend)
+### Deploy Free on Vercel (Interactive Sandbox UI, \$0 Cloud Server Required)
 
-See [`docs/DEPLOYMENT_OCI_VERCEL.md`](docs/DEPLOYMENT_OCI_VERCEL.md) for the complete zero-cost deployment blueprint using:
-- **Frontend on Vercel:** [`frontend/vercel.json`](frontend/vercel.json) + runtime endpoint injection (`NEXUSFIN_GATEWAY_URL`, `NEXUSFIN_KEYCLOAK_ISSUER_URL`)
-- **Backend on OCI Ampere A1 (`4 OCPUs`, `24 GB RAM`):** [`infra/terraform/`](infra/terraform/) + [`docker-compose.oci.yml`](docker-compose.oci.yml) + Caddy TLS (`sslip.io` or custom DNS)
-- **Multi-Arch CD (`linux/amd64`, `linux/arm64`):** [`.github/workflows/cd.yml`](.github/workflows/cd.yml)
+You can deploy [`frontend/`](frontend/) directly to **Vercel** in 3 steps with **zero backend servers or paid cloud accounts**:
+1. Push this repository to GitHub and open **Vercel -> Add New Project**.
+2. Set **Root Directory** to **`frontend`** (uses [`frontend/vercel.json`](frontend/vercel.json), `npm run build:vercel`, output `dist/frontend/browser`).
+3. Click **Deploy** (leave environment variables empty for automatic **Vercel Interactive Sandbox Mode** with simulated double-entry accounts, idempotent transfers, live STOMP feed updates, heuristic Fraud Console, and `.DLT` replay—clearly labeled with a sandbox banner).
+
+### Optional: Full-Stack Cloud Deployment (Vercel Frontend + Oracle Cloud Free ARM64 Backend)
+
+See [`docs/DEPLOYMENT_OCI_VERCEL.md`](docs/DEPLOYMENT_OCI_VERCEL.md) if you want to pair Vercel with an **OCI Ampere A1 (`4 OCPUs`, `24 GB RAM`)** backend using [`infra/terraform/`](infra/terraform/), [`docker-compose.oci.yml`](docker-compose.oci.yml), Caddy TLS, and [`.github/workflows/cd.yml`](.github/workflows/cd.yml).
 
 ---
 

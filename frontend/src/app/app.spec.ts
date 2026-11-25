@@ -14,6 +14,7 @@ describe('App Shell', () => {
     isAuthenticated: () => userSig() !== null,
     isAdmin: () => userSig()?.roles.includes('ADMIN') ?? false,
     isCustomer: () => userSig()?.roles.includes('CUSTOMER') ?? false,
+    isDemoSession: () => false,
     logout: vi.fn(),
   };
 

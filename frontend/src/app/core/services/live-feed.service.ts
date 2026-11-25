@@ -1,13 +1,15 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import { RxStomp, RxStompState } from '@stomp/rx-stomp';
 import { Subscription } from 'rxjs';
-import { getWsBrokerUrl } from '../auth/auth.config';
+import { getWsBrokerUrl, isDemoMode } from '../auth/auth.config';
 import { AuthService } from '../auth/auth.service';
 import { LiveTransactionEvent } from '../models/nexusfin.models';
+import { DemoBackendService } from './demo-backend.service';
 
 @Injectable({ providedIn: 'root' })
 export class LiveFeedService implements OnDestroy {
   private readonly authService = inject(AuthService);
+  private readonly demoBackend = inject(DemoBackendService);
 
   private rxStomp: RxStomp | null = null;
   private stateSub: Subscription | null = null;
@@ -22,13 +24,33 @@ export class LiveFeedService implements OnDestroy {
     if (!token) {
       return;
     }
+
+    const destination = this.authService.isAdmin() ? '/topic/transactions' : '/user/queue/transactions';
+
+    if (isDemoMode() || this.authService.isDemoSession()) {
+      if (this.feedSub) {
+        return;
+      }
+      this.subscribedTopic.set(`${destination} (Sandbox)`);
+      this.connectionState.set(RxStompState.OPEN);
+      this.feedSub = this.demoBackend.liveEvents$.subscribe((evt) => {
+        if (!this.authService.isAdmin()) {
+          const subject = this.authService.user()?.subject;
+          const matchesUser = evt.legs?.some((l) => l.ownerId === subject);
+          if (!matchesUser) {
+            return;
+          }
+        }
+        this.events.update((prev) => [evt, ...prev].slice(0, 50));
+      });
+      return;
+    }
+
     if (this.rxStomp && this.rxStomp.connected()) {
       return;
     }
 
     this.disconnect();
-
-    const destination = this.authService.isAdmin() ? '/topic/transactions' : '/user/queue/transactions';
     this.subscribedTopic.set(destination);
 
     const stomp = new RxStomp();

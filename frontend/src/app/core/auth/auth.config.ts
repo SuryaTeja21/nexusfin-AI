@@ -4,6 +4,7 @@ export interface NexusFinRuntimeConfig {
   gatewayUrl?: string;
   keycloakIssuerUrl?: string;
   wsBrokerUrl?: string;
+  demoMode?: boolean;
 }
 
 declare global {
@@ -17,6 +18,23 @@ export function getRuntimeConfig(): NexusFinRuntimeConfig {
     return {};
   }
   return window.__NEXUSFIN_CONFIG__ ?? {};
+}
+
+export function isDemoMode(): boolean {
+  const cfg = getRuntimeConfig();
+  if (typeof cfg.demoMode === 'boolean') {
+    return cfg.demoMode;
+  }
+  if (typeof window !== 'undefined') {
+    if (window.sessionStorage?.getItem('nexusfin_demo_active') === 'true') {
+      return true;
+    }
+    const host = window.location.hostname;
+    if (!cfg.gatewayUrl && host.endsWith('.vercel.app')) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function buildAuthConfig(): AuthConfig {

@@ -32,6 +32,14 @@
   </div>
 </header>
 
+@if (showSandboxBanner) {
+  <div class="sandbox-ribbon" role="status">
+    <strong>Vercel Interactive Sandbox Mode</strong> — Simulated in-browser ledger, STOMP feed,
+    and heuristic fraud engine. Run <code>docker compose up -d</code> locally for real PostgreSQL,
+    Kafka, Redis, and Keycloak backends.
+  </div>
+}
+
 <div class="toast-stack" aria-live="polite">
   @for (toast of toastService.messages(); track toast.id) {
     <div class="toast" [class]="'toast-' + toast.kind">
