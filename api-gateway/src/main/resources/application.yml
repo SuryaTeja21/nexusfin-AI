@@ -90,6 +90,12 @@ spring:
           predicates:
             - Path=/ws/**
 
+        # Route: Angular SPA Frontend (Nginx)
+        - id: frontend-ui
+          uri: ${FRONTEND_URI:http://frontend:80}
+          predicates:
+            - Path=/**
+
       globalcors:
         cors-configurations:
           '[/**]':

@@ -1,0 +1,48 @@
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" routerLink="/accounts">
+      <span class="brand-mark">NF</span>
+      <span>NexusFin AI</span>
+    </a>
+
+    @if (auth.isAuthenticated()) {
+      <nav class="nav-links" aria-label="Primary Navigation">
+        <a routerLink="/accounts" routerLinkActive="active">Accounts</a>
+        <a routerLink="/transfer" routerLinkActive="active">New Transfer</a>
+        <a routerLink="/feed" routerLinkActive="active">Live Feed</a>
+        @if (auth.isAdmin()) {
+          <a routerLink="/fraud" routerLinkActive="active">Fraud Console</a>
+        }
+      </nav>
+    }
+
+    <div class="user-controls">
+      @if (auth.user(); as user) {
+        <span class="user-chip">
+          <span class="mono">{{ user.username }}</span>
+          <span class="role-pill" [class]="auth.isAdmin() ? 'role-admin' : 'role-customer'">
+            {{ auth.isAdmin() ? 'ADMIN' : 'CUSTOMER' }}
+          </span>
+        </span>
+        <button type="button" class="btn btn-sm btn-secondary" (click)="logout()">Sign Out</button>
+      } @else {
+        <a class="btn btn-sm btn-primary" routerLink="/login">Sign In</a>
+      }
+    </div>
+  </div>
+</header>
+
+<div class="toast-stack" aria-live="polite">
+  @for (toast of toastService.messages(); track toast.id) {
+    <div class="toast" [class]="'toast-' + toast.kind">
+      <span>{{ toast.text }}</span>
+      <button type="button" class="toast-close" (click)="toastService.dismiss(toast.id)" aria-label="Dismiss">
+        ×
+      </button>
+    </div>
+  }
+</div>
+
+<main class="page-shell">
+  <router-outlet />
+</main>

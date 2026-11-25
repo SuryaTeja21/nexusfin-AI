@@ -1,5 +1,7 @@
 package com.nexusfin.gateway.config;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -9,7 +11,14 @@ import org.springframework.security.config.annotation.web.reactive.EnableWebFlux
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
@@ -31,7 +40,10 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(ServerHttpSecurity.CorsSpec::disable) // Delegated to Spring Cloud Gateway globalcors
                 .authorizeExchange(exchanges -> exchanges
-                        // Public endpoints: health, fallback circuit breakers, documentation
+                        // CORS preflight requests for local frontend dev server
+                        .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Public endpoints: health, fallback circuit breakers, documentation, SPA UI assets
                         .pathMatchers(
                                 "/actuator/health",
                                 "/actuator/health/**",
@@ -42,6 +54,25 @@ public class SecurityConfig {
                                 "/v3/api-docs/**",
                                 "/ws",
                                 "/ws/**"
+                        ).permitAll()
+                        .pathMatchers(
+                                HttpMethod.GET,
+                                "/",
+                                "/index.html",
+                                "/favicon.ico",
+                                "/*.js",
+                                "/*.css",
+                                "/*.ico",
+                                "/*.png",
+                                "/*.svg",
+                                "/assets/**",
+                                "/media/**",
+                                "/login",
+                                "/callback",
+                                "/accounts",
+                                "/transfer",
+                                "/feed",
+                                "/fraud"
                         ).permitAll()
 
                         // Chart of Accounts Management:
@@ -115,5 +146,33 @@ public class SecurityConfig {
         }
 
         return authorities;
+    }
+
+    @Bean
+    @ConditionalOnExpression("!'${nexusfin.security.jwt.jwk-set-uri:}'.isBlank()")
+    public ReactiveJwtDecoder reactiveJwtDecoder(
+            @Value("${nexusfin.security.jwt.jwk-set-uri}") String jwkSetUri,
+            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://keycloak:8080/realms/nexusfin}") String primaryIssuer,
+            @Value("${nexusfin.security.jwt.additional-issuers:http://localhost:8083/realms/nexusfin,http://localhost:8080/realms/nexusfin}") String additionalIssuers) {
+        Set<String> allowedIssuers = new HashSet<>();
+        allowedIssuers.add(primaryIssuer.trim());
+        for (String extra : additionalIssuers.split(",")) {
+            if (!extra.isBlank()) {
+                allowedIssuers.add(extra.trim());
+            }
+        }
+        NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
+                new JwtTimestampValidator(),
+                jwt -> {
+                    String iss = jwt.getIssuer() != null ? jwt.getIssuer().toString() : "";
+                    return allowedIssuers.contains(iss)
+                            ? OAuth2TokenValidatorResult.success()
+                            : OAuth2TokenValidatorResult.failure(
+                                    new OAuth2Error("invalid_token", "The iss claim is not valid: " + iss, null));
+                }
+        );
+        decoder.setJwtValidator(validator);
+        return decoder;
     }
 }

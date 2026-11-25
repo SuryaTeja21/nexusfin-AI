@@ -81,6 +81,7 @@ To provide complete transparency for engineering reviews and production readines
 | **Dead-Letter Topic (.DLT) Quarantine** | **Implemented** | `DefaultErrorHandler` with non-retryable exception classification routing poison messages immediately to `nexusfin.ledger.transactions.DLT`, admin visibility endpoint (`/api/v1/fraud/dlt/messages`), one-click replay, and `dlt.messages` Micrometer metrics. |
 | **Full-Stack Observability & Tracing** | **Implemented** | Prometheus `/actuator/prometheus` on all 5 services with HTTP p95/p99 histograms, custom outbox/DLT/cache gauges & counters, Micrometer Tracing + OpenTelemetry OTLP to Grafana Tempo, W3C `traceparent` + `X-Correlation-Id` propagation across WebFlux/MVC/Outbox/Kafka, structured JSON logging, and provisioned Grafana dashboard (`docker-compose.observability.yml`). |
 | **k6 Load Benchmarks** | **Implemented** | Automated `k6` load suite in `perf/` (unique transfers, opposing hot-pair contention, mixed 80/20 read/write, duplicate idempotency replay) with Redis ON/OFF comparison documented in [`docs/benchmarks/BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md). |
+| **Angular Dashboard UI** | **Implemented** | Standalone Angular 22 dashboard (`frontend/`) served behind `api-gateway` (`http://localhost:8080`), with Keycloak OAuth2 PKCE (`S256`) login, Accounts & Ledger drilldown, Transfer form with client-side UUID `idempotencyKey`, live STOMP WebSocket transaction feed (`@stomp/rx-stomp`), and Admin Fraud & DLT Console. |
 | **PGVector Semantic Search** | *Future Enhancement* | Audit logs are stored in PostgreSQL; semantic vector indexing for AML similarity clusters is not yet active. |
 
 ---
@@ -130,6 +131,7 @@ nexusfin-ai/
 │   │   └── V2__processed_events.sql
 │   └── src/test/                                # Testcontainers Flyway schema & Idempotency tests
 ├── notification-service/                        # Real-Time WebSocket/STOMP Service with Redis Fan-Out (Port 8084)
+├── frontend/                                    # Angular 22 Standalone Dashboard + Nginx Container (via Gateway 8080)
 ├── perf/                                        # k6 Load Testing Scripts (Unique, Hot-Pair, Mixed, Idempotency Replay)
 └── infra/
     ├── keycloak/                                # Pre-configured OAuth2 / OIDC Realm Import
@@ -330,5 +332,5 @@ docker compose logs -f ledger-service ai-fraud-service api-gateway
 - [x] **Phase 5: Advanced Resilience**: Kafka consumer retry with Dead-Letter Topic (`.DLT`) for poison messages and Micrometer metrics.
 - [x] **Phase 6: Full-Stack Observability**: Prometheus metrics, Grafana dashboards, OpenTelemetry/Tempo distributed tracing, and structured JSON logging.
 - [x] **Phase 7: Load Testing**: Automated k6 performance benchmarks under high contention ([`BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md)).
-- [ ] **Phase 8: Frontend Dashboard**: Angular standalone client with Keycloak PKCE login and live transaction ledger feed.
+- [x] **Phase 8: Frontend Dashboard**: Standalone Angular 22 client (`frontend/`) served at `http://localhost:8080` with Keycloak PKCE login, reactive transfer form, live STOMP feed, and fraud audit console.
 - [ ] **Phase 9: Production Release**: AWS Terraform infrastructure, CI/CD deployment pipeline, and `v1.0.0` release.

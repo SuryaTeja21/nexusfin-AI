@@ -69,9 +69,9 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ---
 
 ## Phase 8: Angular Dashboard
-- [ ] **#8.1**: Create standalone Angular frontend with Keycloak PKCE authentication.
-- [ ] **#8.2**: Build account management, transfer forms, live transaction feed, and fraud audit dashboard.
-- [ ] **#8.3**: Add frontend unit tests and CI integration.
+- [x] **#8.1**: Create standalone Angular frontend with Keycloak PKCE authentication.
+- [x] **#8.2**: Build account management, transfer forms, live transaction feed, and fraud audit dashboard.
+- [x] **#8.3**: Add frontend unit tests and CI integration.
 
 ---
 

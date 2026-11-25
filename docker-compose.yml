@@ -67,9 +67,13 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+      frontend:
+        condition: service_started
     environment:
       EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
+      NEXUSFIN_SECURITY_JWT_JWK_SET_URI: http://keycloak:8080/realms/nexusfin/protocol/openid-connect/certs
+      FRONTEND_URI: http://frontend:80
       JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m"
 
   # 5. Core ACID Double-Entry Ledger Service (Port 8081)
@@ -99,6 +103,7 @@ services:
       SPRING_DATA_REDIS_PORT: 6379
       NEXUSFIN_REDIS_ENABLED: ${NEXUSFIN_REDIS_ENABLED:-true}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
+      NEXUSFIN_SECURITY_JWT_JWK_SET_URI: http://keycloak:8080/realms/nexusfin/protocol/openid-connect/certs
       JAVA_TOOL_OPTIONS: "-Xms64m -Xmx384m"
 
   # 6. AI Fraud Detection & Audit Intelligence Service (Port 8082)
@@ -121,7 +126,7 @@ services:
       SPRING_DATASOURCE_USERNAME: nexusfin
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-nexusfin_secret} # local dev only
       EUREKA_SERVER_URL: http://discovery-server:8761/eureka/
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-demo-key}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-dummy-key}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m"
 
@@ -213,7 +218,20 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/nexusfin}
+      NEXUSFIN_SECURITY_JWT_JWK_SET_URI: http://keycloak:8080/realms/nexusfin/protocol/openid-connect/certs
       JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m"
+
+  # 11. Angular Dashboard UI (Served Behind API Gateway at http://localhost:8080)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nexusfin-frontend
+    expose:
+      - "80"
+    depends_on:
+      keycloak:
+        condition: service_healthy
 
 volumes:
   pg_ledger_data:

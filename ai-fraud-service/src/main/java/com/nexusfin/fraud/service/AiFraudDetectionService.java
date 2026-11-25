@@ -50,8 +50,8 @@ public class AiFraudDetectionService {
 
         FraudEvaluationResponse response;
 
-        // Use Spring AI ChatClient if active and configured with valid key
-        if (chatClient != null && openAiApiKey != null && !openAiApiKey.contains("dummy") && !openAiApiKey.isBlank()) {
+        // Use Spring AI ChatClient if active and configured with a non-placeholder API key
+        if (chatClient != null && isConfiguredApiKey(openAiApiKey)) {
             try {
                 response = evaluateWithSpringAi(request);
             } catch (Exception e) {
@@ -82,6 +82,16 @@ public class AiFraudDetectionService {
 
         auditLogRepository.save(auditEntry);
         return response;
+    }
+
+    private boolean isConfiguredApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return false;
+        }
+        String normalized = apiKey.trim().toLowerCase();
+        return !normalized.contains("dummy")
+                && !normalized.equals("demo-key")
+                && !normalized.contains("your-openai-api-key");
     }
 
     private FraudEvaluationResponse evaluateWithSpringAi(FraudEvaluationRequest request) throws Exception {

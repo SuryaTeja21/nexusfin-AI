@@ -1,17 +1,27 @@
 package com.nexusfin.notification.config;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Configuration
 @EnableWebSecurity
@@ -46,5 +56,32 @@ public class SecurityConfig {
             return List.of();
         });
         return converter;
+    }
+
+    @Bean
+    @ConditionalOnExpression("!'${nexusfin.security.jwt.jwk-set-uri:}'.isBlank()")
+    public JwtDecoder jwtDecoder(
+            @Value("${nexusfin.security.jwt.jwk-set-uri}") String jwkSetUri,
+            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://keycloak:8080/realms/nexusfin}") String primaryIssuer,
+            @Value("${nexusfin.security.jwt.additional-issuers:http://localhost:8083/realms/nexusfin,http://localhost:8080/realms/nexusfin}") String additionalIssuers) {
+        Set<String> allowedIssuers = new HashSet<>();
+        allowedIssuers.add(primaryIssuer.trim());
+        for (String extra : additionalIssuers.split(",")) {
+            if (!extra.isBlank()) {
+                allowedIssuers.add(extra.trim());
+            }
+        }
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                new JwtTimestampValidator(),
+                jwt -> {
+                    String iss = jwt.getIssuer() != null ? jwt.getIssuer().toString() : "";
+                    return allowedIssuers.contains(iss)
+                            ? OAuth2TokenValidatorResult.success()
+                            : OAuth2TokenValidatorResult.failure(
+                                    new OAuth2Error("invalid_token", "The iss claim is not valid: " + iss, null));
+                }
+        ));
+        return decoder;
     }
 }
