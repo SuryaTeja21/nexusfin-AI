@@ -99,7 +99,7 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            allowedOrigins: "*"
+            allowedOriginPatterns: "${NEXUSFIN_CORS_ALLOWED_ORIGIN_PATTERNS:*}"
             allowedMethods:
               - GET
               - POST

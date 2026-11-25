@@ -76,6 +76,6 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ---
 
 ## Phase 9: Deployment, Polish & Demo
-- [ ] **#9.1**: Configure AWS cloud deployment (EC2/RDS) and optional S3 export.
-- [ ] **#9.2**: Add Terraform infrastructure-as-code definitions.
-- [ ] **#9.3**: Finalize CI/CD release pipeline, architecture diagrams, and release `v1.0.0`.
+- [x] **#9.1**: Configure Vercel frontend (`vercel.json` + runtime env injection) & Oracle Cloud Always Free ARM64 backend overlay (`docker-compose.oci.yml`, Caddy TLS).
+- [x] **#9.2**: Add Terraform infrastructure-as-code definitions (`infra/terraform/` for OCI `VM.Standard.A1.Flex`, VCN, Security List) & deployment guide (`docs/DEPLOYMENT_OCI_VERCEL.md`).
+- [x] **#9.3**: Add multi-arch GHCR CD pipeline (`.github/workflows/cd.yml`), `LICENSE`, `CONTRIBUTING.md`, and final `README.md` overhaul. *(Live OCI/Vercel account apply & demo video pending owner provisioning.)*

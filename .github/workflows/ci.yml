@@ -103,6 +103,8 @@ jobs:
         run: |
           docker compose config -q
           docker compose -f docker-compose.yml -f docker-compose.observability.yml config -q
+          API_DOMAIN=api.example.sslip.io AUTH_DOMAIN=auth.example.sslip.io POSTGRES_PASSWORD=ci_pw KEYCLOAK_ADMIN_PASSWORD=ci_kw \
+            docker compose -f docker-compose.yml -f docker-compose.oci.yml config -q
 
   e2e-live-tests:
     name: Live Microservice End-to-End API Verification

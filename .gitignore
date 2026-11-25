@@ -35,7 +35,15 @@ build/
 ### OS & Secrets ###
 .DS_Store
 .env
+.env.oci
 *.log
 *.pdf
 *.PDF
+
+### Terraform ###
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
 

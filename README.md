@@ -1,205 +1,101 @@
-# NexusFin AI 🏦⚡
-> **Enterprise-Grade Financial Transaction, ACID Ledger, and AI Intelligence Platform**  
-> *Production-Ready Double-Entry Accounting, Transactional Outbox, Kafka Streaming, and Dual AI/Rule Fraud Engine*
+# NexusFin AI
+
+**Cloud-native, event-driven banking ledger and real-time fraud platform built with Java 21 Virtual Threads, Spring Boot 3.2, Apache Kafka, PostgreSQL 16, Redis, Keycloak PKCE, and Angular 22.**
+
+> Strictly enforces double-entry accounting invariants ($\sum \text{Debits} = \sum \text{Credits}$), deterministic batch pessimistic row locking (`ORDER BY id ASC`), transactional outbox publishing (`SKIP LOCKED`), idempotent Kafka consumers with `.DLT` quarantine, Redis caching + `SET NX` in-flight locks, OpenTelemetry/Prometheus observability, and real-time STOMP WebSocket push updates.
 
 ---
 
-## 1. Executive Summary & Architecture Overview
+## 1. Architecture Overview
 
-**NexusFin AI** is a cloud-native, high-throughput, microservice-oriented financial platform engineered in **Java 21 (LTS)** and **Spring Boot 3.2.x**, leveraging **JDK 21 Virtual Threads (Project Loom)** across all processing layers. 
+```mermaid
+flowchart TB
+    Browser["Browser / Angular 22 Dashboard (Vercel or Gateway / )"]
+    KC["Keycloak 24 IAM (OAuth2 Authorization Code + PKCE S256)"]
+    GW["API Gateway :8080 (Spring Cloud WebFlux + Resilience4j)"]
+    EUREKA["Eureka Registry :8761"]
+    LEDGER["Ledger Service :8081 (ACID Double-Entry + Outbox)"]
+    FRAUD["AI Fraud Service :8082 (Spring AI + Heuristic Engine + DLT)"]
+    NOTIF["Notification Service :8084 (STOMP /ws + Redis Pub/Sub)"]
+    PGL[("PostgreSQL 16 Ledger DB")]
+    PGV[("PGVector DB (Audit & Processed Events)")]
+    REDIS[("Redis 7 (Idempotency, Balances, Locks, Pub/Sub)")]
+    KAFKA[["Apache Kafka 3.7 (KRaft)"]]
+    OBS["Prometheus + Grafana Tempo + Grafana (:3000)"]
 
-The architecture strictly follows GAAP/IFRS double-entry accounting invariants, providing guaranteed ACID transactional consistency, deterministic batch lock ordering for deadlock prevention, transactional outbox event publishing with `SKIP LOCKED`, idempotent Kafka event consumption, and real-time dual LLM/heuristic fraud risk assessment.
-
-```text
-                                  [ Client / API Consumer ]
-                                              │
-                                              ▼
-                             ┌─────────────────────────────────┐
-                             │    api-gateway (Port 8080)      │
-                             │  - API Key Security Filter      │
-                             │  - Distributed Tracing (X-Corr) │
-                             │  - Resilience4j Circuit Breaker │
-                             │  - FallbackController           │
-                             └────────────────┬────────────────┘
-                                              │ (HTTP / Virtual Threads)
-                     ┌────────────────────────┴────────────────────────┐
-                     ▼                                                 ▼
-       ┌───────────────────────────┐                     ┌───────────────────────────┐
-       │  ledger-service (Port 8081)│                     │ai-fraud-service (Port 8082)│
-       │  - Strict Double-Entry    │                     │ - Real-Time REST & Kafka  │
-       │  - Batch Pessimistic Locks│                     │ - Dual LLM + Heuristics   │
-       │  - Transactional Outbox   │                     │ - Idempotent Deduplication│
-       └─────────────┬─────────────┘                     └─────────────┬─────────────┘
-                     │                                                 │
-                     ▼ (ACID Commits)                                  ▼ (Audit & Deduplication)
-       ┌───────────────────────────┐                     ┌───────────────────────────┐
-       │ postgres-ledger (5432)    │                     │ postgres-vector (5433)    │
-       │ - Accounts & Balances     │                     │ - ai_fraud_audit_logs     │
-       │ - Transactions & Entries  │                     │ - processed_events        │
-       │ - outbox_events           │                     │ - Flyway V1 & V2 Migrated │
-       └─────────────┬─────────────┘                     └─────────────▲─────────────┘
-                     │                                                 │
-                     ▼ (SKIP LOCKED Poll)                              │
-       ┌───────────────────────────┐                                   │
-       │  OutboxPublisherService   │                                   │
-       │  - Synchronous Kafka Send │                                   │
-       └─────────────┬─────────────┘                                   │
-                     │                                                 │
-                     ▼ (Topic: nexusfin.ledger.transactions)           │
-       ┌───────────────────────────────────────────────────────────────┴─────────────┐
-       │                          Apache Kafka Cluster (9092)                        │
-       └─────────────────────────────────────────────────────────────────────────────┘
-                                             ▲
-                                             │ (Heartbeats & Discovery)
-                           ┌─────────────────┴─────────────────┐
-                           │   discovery-server (Port 8761)    │
-                           │    Spring Cloud Netflix Eureka    │
-                           └───────────────────────────────────┘
+    Browser -->|OIDC Login| KC
+    Browser -->|HTTPS REST + WSS /ws + Bearer JWT| GW
+    GW -->|Route & Forward JWT| LEDGER
+    GW -->|Route & Forward JWT| FRAUD
+    GW -->|WS Upgrade| NOTIF
+    GW -.->|Service Discovery| EUREKA
+    LEDGER -->|Tx + Outbox Rows| PGL
+    LEDGER -->|Cache + Lock| REDIS
+    LEDGER -->|Outbox SKIP LOCKED| KAFKA
+    KAFKA -->|Consume + Deduplicate| FRAUD
+    FRAUD -->|Audit Logs| PGV
+    KAFKA -->|Consume| NOTIF
+    NOTIF <-->|Cluster Fan-Out| REDIS
+    LEDGER & FRAUD & NOTIF & GW & EUREKA -.->|Metrics & OTLP Traces| OBS
 ```
 
 ---
 
-## 2. What Is and Is Not Implemented
+## 2. Run Locally in 2 Commands
 
-To provide complete transparency for engineering reviews and production readiness audits:
+```bash
+cp .env.example .env
+docker compose up -d
+```
 
-| Feature / Capability | Status | Implementation Details |
+- **Angular Dashboard UI + API Gateway:** `http://localhost:8080`
+- **Keycloak SSO Realm (`nexusfin`):** `http://localhost:8083` (`admin1` / `admin_password` for `ADMIN`; `customer1` / `customer_password` for `CUSTOMER`)
+- **Eureka Dashboard:** `http://localhost:8761`
+
+With observability enabled ([Prometheus](http://localhost:9090), [Grafana `admin`/`admin`](http://localhost:3000), Tempo):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+```
+
+### Deploy Free Hybrid Cloud (Vercel Frontend + Oracle Cloud Always Free ARM64 Backend)
+
+See [`docs/DEPLOYMENT_OCI_VERCEL.md`](docs/DEPLOYMENT_OCI_VERCEL.md) for the complete zero-cost deployment blueprint using:
+- **Frontend on Vercel:** [`frontend/vercel.json`](frontend/vercel.json) + runtime endpoint injection (`NEXUSFIN_GATEWAY_URL`, `NEXUSFIN_KEYCLOAK_ISSUER_URL`)
+- **Backend on OCI Ampere A1 (`4 OCPUs`, `24 GB RAM`):** [`infra/terraform/`](infra/terraform/) + [`docker-compose.oci.yml`](docker-compose.oci.yml) + Caddy TLS (`sslip.io` or custom DNS)
+- **Multi-Arch CD (`linux/amd64`, `linux/arm64`):** [`.github/workflows/cd.yml`](.github/workflows/cd.yml)
+
+---
+
+## 3. Core Capabilities & Implementation Status
+
+| Capability | Status | Implementation Summary |
 | :--- | :--- | :--- |
-| **GAAP/IFRS Double-Entry Ledger** | **Implemented** | Balanced multi-leg debit/credit validation ($\sum \text{Debits} = \sum \text{Credits}$), non-negative balance checks, immutable entries. |
-| **Deadlock-Free Lock Ordering** | **Implemented** | Deterministic ID sorting and single-query batch locking via `findAllByIdsWithPessimisticLock` (`SELECT ... FOR UPDATE`). |
-| **Idempotency Protection** | **Implemented** | Database-backed unique constraints on `idempotency_key` in `ledger-service` returning existing records without mutating balances. |
-| **Transactional Outbox Pattern** | **Implemented** | Outbox events written in the same DB transaction; polled via `SELECT ... FOR UPDATE SKIP LOCKED` and published synchronously. |
-| **Event Streaming (Kafka)** | **Implemented** | Real-time `nexusfin.ledger.transactions` event publication and consumption with transactional commit safety. |
-| **Idempotent Kafka Consumer** | **Implemented** | `ai-fraud-service` deduplication table (`processed_events`) preventing duplicate processing and duplicate audit logs. |
-| **Dual AI/Rule Fraud Engine** | **Implemented** | OpenAI / Spring AI integration with strict JSON schema parsing; automatic fallback to deterministic heuristic rules on timeout or LLM error. |
-| **Schema Migrations** | **Implemented** | Flyway managed schemas across all services (`ledger-service` V1-V5, `ai-fraud-service` V1-V2) with `ddl-auto: validate`. |
-| **Integration Concurrency Tests** | **Implemented** | Full Testcontainers integration suite (PostgreSQL 16, Kafka 3.7, Redis 7) testing opposing transfers, random pairs, outbox concurrency, and consumer idempotency. |
-| **API Gateway Routing & Resilience** | **Implemented** | Path routing, correlation ID injection, Resilience4j circuit breaker + bulkheads, GET retries, and `/fallback/ledger` degradation. |
-| **Keycloak OAuth2 / OIDC PKCE** | **Implemented** | Keycloak realm (`nexusfin`), reactive resource server on gateway, defense-in-depth resource server on `ledger-service` and `notification-service`, tenant isolation via `owner_id`. |
-| **Redis Caching & Distributed Locks** | **Implemented** | Sub-millisecond idempotency cache hits, `SET NX` in-flight lock preventing duplicate concurrent transfers, post-commit balance eviction. |
-| **WebSocket / STOMP Live Feed** | **Implemented** | `notification-service` with authenticated STOMP endpoint (`/ws`), admin broadcast (`/topic/transactions`), customer queue (`/user/queue/transactions`), and Redis Pub/Sub cluster fan-out. |
-| **Dead-Letter Topic (.DLT) Quarantine** | **Implemented** | `DefaultErrorHandler` with non-retryable exception classification routing poison messages immediately to `nexusfin.ledger.transactions.DLT`, admin visibility endpoint (`/api/v1/fraud/dlt/messages`), one-click replay, and `dlt.messages` Micrometer metrics. |
-| **Full-Stack Observability & Tracing** | **Implemented** | Prometheus `/actuator/prometheus` on all 5 services with HTTP p95/p99 histograms, custom outbox/DLT/cache gauges & counters, Micrometer Tracing + OpenTelemetry OTLP to Grafana Tempo, W3C `traceparent` + `X-Correlation-Id` propagation across WebFlux/MVC/Outbox/Kafka, structured JSON logging, and provisioned Grafana dashboard (`docker-compose.observability.yml`). |
-| **k6 Load Benchmarks** | **Implemented** | Automated `k6` load suite in `perf/` (unique transfers, opposing hot-pair contention, mixed 80/20 read/write, duplicate idempotency replay) with Redis ON/OFF comparison documented in [`docs/benchmarks/BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md). |
-| **Angular Dashboard UI** | **Implemented** | Standalone Angular 22 dashboard (`frontend/`) served behind `api-gateway` (`http://localhost:8080`), with Keycloak OAuth2 PKCE (`S256`) login, Accounts & Ledger drilldown, Transfer form with client-side UUID `idempotencyKey`, live STOMP WebSocket transaction feed (`@stomp/rx-stomp`), and Admin Fraud & DLT Console. |
-| **PGVector Semantic Search** | *Future Enhancement* | Audit logs are stored in PostgreSQL; semantic vector indexing for AML similarity clusters is not yet active. |
+| **GAAP/IFRS Double-Entry Ledger** | **Implemented** | Multi-leg balanced debit/credit validation ($\sum \text{Debits} = \sum \text{Credits}$), non-negative balance checks, immutable entries. |
+| **Deadlock-Free Pessimistic Locking** | **Implemented** | Deterministic ascending UUID batch row locking (`findAllByIdsWithPessimisticLock` with `SELECT ... FOR UPDATE`). |
+| **Idempotency & In-Flight Locks** | **Implemented** | DB unique constraint on `idempotency_key` backed by Redis cache + `SET NX` concurrent-flight guard. |
+| **Transactional Outbox (`SKIP LOCKED`)** | **Implemented** | Atomic outbox rows polled via `PESSIMISTIC_WRITE` + `SKIP LOCKED` with synchronous Kafka dispatch & W3C traceparent replay. |
+| **AI Fraud & Heuristic Fallback** | **Implemented** | Spring AI ChatClient with strict JSON schema parsing and deterministic millisecond fallback heuristics when no production OpenAI key is configured. |
+| **Dead-Letter Topic Quarantine** | **Implemented** | Non-retryable poison-pill routing to `nexusfin.ledger.transactions.DLT`, `/api/v1/fraud/dlt/messages` inspection, and one-click replay. |
+| **Keycloak OAuth2 / OIDC PKCE** | **Implemented** | Gateway + service-level JWT validation (supports Docker & browser issuers), `ADMIN`/`CUSTOMER` RBAC, and tenant `owner_id` isolation. |
+| **WebSocket/STOMP Live Feed** | **Implemented** | Authenticated `/ws` endpoint, `/topic/transactions` (`ADMIN`), `/user/queue/transactions` (`CUSTOMER`), Redis Pub/Sub fan-out. |
+| **Observability Stack** | **Implemented** | Prometheus `/actuator/prometheus`, OpenTelemetry OTLP to Grafana Tempo, JSON logs (`traceId`, `spanId`, `X-Correlation-Id`), provisioned Grafana dashboards. |
+| **k6 Load Test Suite** | **Implemented** | Automated `k6` scripts (`perf/`) covering unique, opposing hot-pair, 80/20 mixed, and idempotency replay workloads. |
+| **Angular 22 Dashboard** | **Implemented** | Standalone UI (`frontend/`) behind Gateway or Vercel with PKCE login, Accounts drilldown, Transfer UUID protection, Live STOMP feed, Fraud Console. |
+| **OCI ARM64 IaC & GHCR CD** | **Implemented** | Terraform for Oracle Always Free `VM.Standard.A1.Flex`, Caddy TLS overlay, Vercel config script, multi-arch GHCR release pipeline. |
 
 ---
 
-## 3. Multi-Module Project Structure
+## 4. Measured Performance Summary ([`BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md))
 
-```text
-nexusfin-ai/
-├── pom.xml                                      # Multi-Module Parent POM (Spring Boot 3.2.5, Spring Cloud 2023, Spring AI 0.8.1)
-├── docker-compose.yml                           # Full stack orchestration (PostgreSQL 16, Kafka, Redis, Keycloak, Microservices)
-├── docker-compose.observability.yml             # Observability overlay (Prometheus, Grafana Tempo, Grafana)
-├── discovery-server/                            # Netflix Eureka Service Registry (Port 8761)
-│   ├── src/main/java/com/nexusfin/discovery/
-│   └── src/main/resources/application.yml
-├── api-gateway/                                 # Spring Cloud Gateway WebFlux (Port 8080)
-│   ├── src/main/java/com/nexusfin/gateway/
-│   │   ├── controller/FallbackController.java   # Resilience4j Circuit Breaker fallback response
-│   │   ├── filter/CorrelationIdGlobalFilter.java # Injects X-Correlation-Id across services
-│   │   ├── filter/FinTechAuditLoggingFilter.java # Tracks API request latencies and status codes
-│   │   └── filter/GatewaySecurityFilter.java    # Enforces X-API-Key edge authentication
-│   └── src/main/resources/application.yml
-├── ledger-service/                              # Core ACID Double-Entry Financial Engine (Port 8081)
-│   ├── src/main/java/com/nexusfin/ledger/
-│   │   ├── controller/                          # REST Controllers & RFC 7807 Exception Handlers
-│   │   ├── domain/entity/                       # JPA Entities (Account, Transaction, LedgerEntry, OutboxEvent)
-│   │   ├── domain/model/                        # AccountType, AccountStatus, EntryType, OutboxStatus
-│   │   ├── dto/                                 # Strongly validated Request & Response models
-│   │   ├── repository/                          # Spring Data JPA with batch pessimistic locking
-│   │   └── service/                             # LedgerService & OutboxPublisherService
-│   ├── src/main/resources/db/migration/         # Flyway Migrations (PostgreSQL 16)
-│   │   ├── V1__init_ledger_schema.sql
-│   │   ├── V2__seed_chart_of_accounts.sql
-│   │   ├── V3__create_outbox_table.sql
-│   │   ├── V4__add_account_owner_id.sql
-│   │   └── V5__add_outbox_trace_context.sql
-│   └── src/test/                                # Concurrency ITs & Testcontainers test suite
-├── ai-fraud-service/                            # AI Fraud Intelligence Microservice (Port 8082)
-│   ├── src/main/java/com/nexusfin/fraud/
-│   │   ├── consumer/TransactionEventListener.java # Idempotent Kafka consumer & DLT quarantine
-│   │   ├── controller/FraudDetectionController.java # Evaluation and audit log endpoints
-│   │   ├── domain/entity/                       # AuditLogEntry, ProcessedEvent
-│   │   ├── dto/                                 # Evaluation Request, Response, Event DTOs
-│   │   ├── repository/                          # AuditLogRepository, ProcessedEventRepository
-│   │   └── service/AiFraudDetectionService.java # Dual Spring AI + Heuristic rule engine
-│   ├── src/main/resources/db/migration/         # Flyway Migrations (PostgreSQL 16)
-│   │   ├── V1__fraud_audit_log.sql
-│   │   └── V2__processed_events.sql
-│   └── src/test/                                # Testcontainers Flyway schema & Idempotency tests
-├── notification-service/                        # Real-Time WebSocket/STOMP Service with Redis Fan-Out (Port 8084)
-├── frontend/                                    # Angular 22 Standalone Dashboard + Nginx Container (via Gateway 8080)
-├── perf/                                        # k6 Load Testing Scripts (Unique, Hot-Pair, Mixed, Idempotency Replay)
-└── infra/
-    ├── keycloak/                                # Pre-configured OAuth2 / OIDC Realm Import
-    └── observability/                           # Prometheus, Tempo, and Grafana Dashboards & Provisioning
-```
+Measured via `k6 v2.4.0` on Apple M4 (4 Docker vCPUs / 3.81 GiB container RAM ceiling) against live PostgreSQL 16 + Kafka 3.7 + Redis 7 + Keycloak (`0` errors across all benchmark transactions):
 
----
-
-## 4. Financial Engineering & Core Invariants
-
-### 4.1 Fundamental Accounting Invariants
-$$\text{Assets} = \text{Liabilities} + \text{Equity} + (\text{Revenue} - \text{Expenses})$$
-
-Every financial transaction must contain at least two entries (legs) that strictly balance:
-$$\sum \text{Debits} = \sum \text{Credits}$$
-
-### 4.2 Normal Balances & Balance Updating Math
-
-| Account Category | Normal Balance | Balance Formula on DEBIT | Balance Formula on CREDIT |
-| :--- | :--- | :--- | :--- |
-| **ASSET** | **DEBIT** | $\text{Balance} + \text{Amount}$ | $\text{Balance} - \text{Amount}$ |
-| **EXPENSE** | **DEBIT** | $\text{Balance} + \text{Amount}$ | $\text{Balance} - \text{Amount}$ |
-| **LIABILITY** | **CREDIT** | $\text{Balance} - \text{Amount}$ | $\text{Balance} + \text{Amount}$ |
-| **EQUITY** | **CREDIT** | $\text{Balance} - \text{Amount}$ | $\text{Balance} + \text{Amount}$ |
-| **REVENUE** | **CREDIT** | $\text{Balance} - \text{Amount}$ | $\text{Balance} + \text{Amount}$ |
-
-### 4.3 Deadlock Prevention via Deterministic Lock Ordering
-When two concurrent transactions debit and credit the same accounts in reverse order (e.g. $A \to B$ and $B \to A$), standard database transactions encounter deadlocks.  
-**NexusFin AI Solves This:** `LedgerService` extracts all account IDs involved in a multi-leg transaction, sorts them in deterministic ascending order, and executes a single ordered batch lock query:
-```sql
-SELECT a FROM Account a WHERE a.id IN :ids ORDER BY a.id ASC
-```
-Using `@Lock(LockModeType.PESSIMISTIC_WRITE)`. This eliminates N+1 query round trips and mathematically eliminates circular lock wait conditions.
-
-### 4.4 Transactional Outbox Pattern with `SKIP LOCKED`
-Events are persisted to `outbox_events` within the primary database transaction. The background `OutboxPublisherService` polls pending events using:
-```sql
-SELECT o FROM OutboxEvent o WHERE o.status = :status ORDER BY o.createdAt ASC
-```
-Locked with `PESSIMISTIC_WRITE` and `SKIP LOCKED`. It synchronously dispatches each message to Kafka via `kafkaTemplate.send(...).get(5, TimeUnit.SECONDS)` within `@Transactional(REQUIRES_NEW)`. If publishing fails, the transaction rolls back and increments `retry_count` without blocking concurrent worker threads.
-
-### 4.5 Idempotent Kafka Consumer
-`TransactionEventListener` in `ai-fraud-service` implements the Idempotent Consumer pattern using the `processed_events` table. If Kafka redelivers an event due to a network rebalance or broker retry, the consumer detects the existing record and skips re-evaluating the transaction, preventing duplicate audit records.
-
-### 4.6 Failure-Handling & Microservice Resilience Matrix
-NexusFin AI incorporates zero-trust, defense-in-depth failure resilience to isolate poison pills, transient errors, and cascading failures:
-
-| Failure Mode | Component Affected | Detection & Mitigation Strategy | Fallback / Recovery Mechanism |
-| :--- | :--- | :--- | :--- |
-| **Downstream Microservice Outage** | API Gateway | Resilience4j Reactive Circuit Breakers (50% failure rate threshold, 10s wait state) | Standardized RFC 7807 503 Problem Details (`/fallback/ledger`, `/fallback/fraud`) |
-| **Transient Read Latency / Blip** | API Gateway -> Microservices | Spring Cloud Gateway `Retry` filter (idempotent `GET` requests only, 3 retries, exponential backoff 50ms-500ms) | Automatic transparent retry; circuit breaker trips if persistent |
-| **Money-Moving POST Failure** | API Gateway / Ledger Service | **Zero Blind Retries**: Gateway strictly disables retries on non-idempotent HTTP methods (`POST`, `PUT`, `DELETE`) | Client retries safely with original `Idempotency-Key`; Ledger Service returns cached record |
-| **Poison Pill Message (Corrupt JSON)** | Kafka Consumers (`ai-fraud`, `notification`) | Spring Kafka `DefaultErrorHandler` with non-retryable exception classification (`JsonParseException`, `DeserializationException`, `IllegalArgumentException`) | Instant quarantine to `nexusfin.ledger.transactions.DLT` without retries or head-of-line blocking; metric `dlt.messages` incremented |
-| **Transient Consumer Database Lock** | Kafka Consumers | `DefaultErrorHandler` with `ExponentialBackOffWithMaxRetries` (2 retries, 100ms initial, factor 2.0) | Retries 3 times total; routes to `.DLT` if all retries fail |
-| **Quarantined Message Inspection & Recovery** | AI Fraud Service | In-memory `DltMessageStore` indexing all DLT events with metadata | `GET /api/v1/fraud/dlt/messages` (admin inspect) and `POST /api/v1/fraud/dlt/replay/{id}` (re-injects to Kafka) |
-| **Concurrent In-Flight Duplicate Transfer** | Ledger Service | Redis `SET NX` distributed lock on `idempotency_key` | Immediate HTTP 409 Conflict rejection; protects DB connection pool |
-| **Redis Outage** | Ledger / Notification | Fail-open fallback: cache failure logs warning and degrades directly to PostgreSQL / local routing | Business transactions proceed uninterrupted directly against PostgreSQL |
-
-### 4.7 Full-Stack Observability (Prometheus, Grafana Tempo, OpenTelemetry & JSON Logging)
-- **Prometheus Metrics**: Every microservice exposes `/actuator/prometheus` with `http.server.requests` percentile histograms (`p95`/`p99`), plus domain metrics `outbox.pending.events` (`OutboxMetricsConfig`), `dlt.messages` / `dlt.quarantined.active`, and Redis `idempotency.cache.*` / `account.balance.cache.*`.
-- **Distributed Tracing & `X-Correlation-Id` Baggage**: `Micrometer Tracing` + `opentelemetry-exporter-otlp` ships spans to **Grafana Tempo** (`http://tempo:4318/v1/traces`). `CorrelationIdGlobalFilter` (`ReactorBaggage` + `ObservationAwareBaggageThreadLocalAccessor`), `CorrelationIdMdcFilter`, `OutboxEvent` (`V5__add_outbox_trace_context.sql`), and Kafka `observation-enabled` propagate `traceparent` and `X-Correlation-Id` seamlessly from Gateway -> Ledger -> Outbox -> Kafka -> AI Fraud & Notification consumers.
-- **Structured JSON Logging**: Unified `logback-spring.xml` (`LogstashEncoder`) outputs JSON logs tagged with `service`, `level`, `logger`, `thread`, `traceId`, `spanId`, and `X-Correlation-Id`.
-- **Local Observability Stack**:
-  ```bash
-  docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
-  ```
-  - **Grafana**: `http://localhost:3000` (`admin` / `admin`) — auto-provisions Prometheus, Tempo, and `NexusFin AI — Observability Overview` dashboard.
-  - **Prometheus**: `http://localhost:9090`
+| Workload | VUs | Throughput | Avg Latency | p95 Latency | p99 Latency | Check Pass |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Unique Transfers** (`12,027` tx) | 12 | **395.64 req/s** | `29.86 ms` | `63.51 ms` | `98.94 ms` | **100.00%** |
+| **Opposing Hot-Pair `A <-> B`** (`16,547` tx) | 12 | **547.99 req/s** | `21.68 ms` | `48.83 ms` | `70.92 ms` | **100.00%** (`0` deadlocks) |
+| **Mixed 80/20 Read/Write** (`Redis ON` vs `OFF`) | 16 | **1,036.78 req/s** (`+23.2%`) | `15.25 ms` | `37.86 ms` (`-31.0%`) | W: `57.45 ms` (`-46.7%`) | **100.00%** |
+| **Duplicate Idempotency Replay** (`22,144` ops) | 20 | **1,095.09 req/s** | `17.99 ms` | `37.25 ms` | `60.18 ms` | **100.00%** |
 
 ![Grafana Observability Dashboard](docs/images/grafana-observability-dashboard.png)
 
@@ -207,130 +103,68 @@ NexusFin AI incorporates zero-trust, defense-in-depth failure resilience to isol
 
 ---
 
-## 5. API Reference & Verification
+## 5. Multi-Module Repository Structure
 
-All API calls must include the edge security key header `X-API-Key` (configured via `NEXUSFIN_API_KEY`).
-
-### 5.1 Create Account
-```bash
-curl -X POST http://localhost:8080/api/v1/accounts \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: nexusfin-local-dev-key" \
-  -d '{
-    "accountNumber": "ACC-CUSTOMER-ALICE-USD",
-    "accountName": "Alice Checking Account",
-    "accountType": "LIABILITY",
-    "currency": "USD",
-    "initialBalance": 5000.0000
-  }'
-```
-
-### 5.2 Balanced Multi-Leg Double-Entry Transaction
-```bash
-curl -X POST http://localhost:8080/api/v1/ledger/transactions \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: nexusfin-local-dev-key" \
-  -d '{
-    "transactionReference": "TX-2026-0001",
-    "idempotencyKey": "IDEMP-UUID-1001",
-    "transactionType": "TRANSFER",
-    "description": "Customer settlement to central reserve",
-    "legs": [
-      {
-        "accountNumber": "ACC-LIAB-CUSTOMER-CLEARING-USD",
-        "entryType": "DEBIT",
-        "amount": 1000.0000,
-        "currency": "USD"
-      },
-      {
-        "accountNumber": "ACC-ASSET-CENTRAL-RESERVE-USD",
-        "entryType": "CREDIT",
-        "amount": 1000.0000,
-        "currency": "USD"
-      }
-    ]
-  }'
-```
-
-### 5.3 High-Level Account Transfer
-```bash
-curl -X POST http://localhost:8080/api/v1/ledger/transfers \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: nexusfin-local-dev-key" \
-  -d '{
-    "sourceAccountNumber": "ACC-ASSET-CENTRAL-RESERVE-USD",
-    "destinationAccountNumber": "ACC-LIAB-CUSTOMER-CLEARING-USD",
-    "amount": 250.0000,
-    "currency": "USD",
-    "idempotencyKey": "IDEMP-TRF-0099",
-    "description": "Direct wallet fund transfer"
-  }'
-```
-
-### 5.4 AI Fraud Risk Assessment
-```bash
-curl -X POST http://localhost:8080/api/v1/fraud/evaluate \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: nexusfin-local-dev-key" \
-  -d '{
-    "transactionReference": "TX-2026-0001",
-    "amount": 1250000.00,
-    "currency": "USD",
-    "merchantCategory": "CRYPTO_EXCHANGE",
-    "geolocation": "SUSPICIOUS_UNKNOWN",
-    "clientIp": "198.51.100.42"
-  }'
+```text
+nexusfin-ai/
+├── pom.xml                                  # Parent POM (Java 21, Spring Boot 3.2.5, Spring Cloud 2023, Spring AI 0.8.1)
+├── docker-compose.yml                       # Full 11-container local development stack
+├── docker-compose.observability.yml         # Prometheus, Grafana Tempo, and Grafana dashboards overlay
+├── docker-compose.oci.yml                   # Oracle Cloud Always Free ARM64 + Caddy TLS production overlay
+├── .github/workflows/
+│   ├── ci.yml                               # Backend tests (Testcontainers), Angular Vitest+build, Compose lint, live E2E
+│   └── cd.yml                               # Tagged v* multi-arch (linux/amd64, linux/arm64) GHCR push & GitHub Release
+├── discovery-server/                        # Netflix Eureka registry (:8761)
+├── api-gateway/                             # Spring Cloud Gateway WebFlux, Resilience4j, PKCE JWT validation (:8080)
+├── ledger-service/                          # ACID double-entry engine, deterministic locking, outbox, Redis cache (:8081)
+├── ai-fraud-service/                        # Dual Spring AI + heuristic engine, idempotent consumer, DLT replay (:8082)
+├── notification-service/                    # Authenticated STOMP WebSocket + Redis Pub/Sub fan-out (:8084)
+├── frontend/                                # Angular 22 standalone SPA, Vitest specs, Nginx & Vercel deploy config
+├── perf/                                    # k6 load tests + measured benchmark scripts
+└── infra/
+    ├── keycloak/                            # Pre-configured OAuth2 / OIDC nexusfin realm import
+    ├── observability/                       # Prometheus, Tempo, and Grafana provisioning configs
+    ├── oci/                                 # Caddyfile & Keycloak Vercel redirect registration helper
+    └── terraform/                           # Oracle Cloud Always Free ARM64 VCN, Security List & Ampere A1 IaC
 ```
 
 ---
 
-## 6. Local Orchestration & Running Tests
+## 6. Security Model & Known Limitations
 
-### 6.1 Run the Full Test Suite
-All unit tests and Testcontainers integration tests (requiring Docker):
-```bash
-./mvnw clean verify
-```
+### Security Model
+- **Zero-Trust JWT Defense-in-Depth:** Both `api-gateway` (WebFlux reactive resource server) and downstream services (`ledger-service`, `notification-service`) cryptographically verify Keycloak RSA signatures against `jwk-set-uri` while permitting both browser PKCE issuers and internal Docker issuers.
+- **Role-Based Access Control (RBAC):** `CUSTOMER` users can query only accounts matching their JWT `sub`/`owner_id` and submit transfers from owned accounts; `ADMIN` users have global visibility, account provisioning (`POST /api/v1/accounts`), `/topic/transactions`, fraud audit logs (`/api/v1/fraud/audit-logs`), and `.DLT` replay controls.
+- **No Blind Mutation Retries:** Gateway Resilience4j retry filters explicitly apply only to idempotent `GET` endpoints—never `POST` transfers.
 
-To run unit tests only without starting Docker containers:
-```bash
-./mvnw test -Dtest="*UnitTest,*Tests,AiFraudDetectionServiceTest" -Dsurefire.failIfNoSpecifiedTests=false
-```
-
-### 6.2 Start Local Infrastructure with Docker Compose
-```bash
-# 1. Copy local configuration
-cp .env.example .env
-
-# 2. Start all services in detached mode
-docker compose up -d
-
-# 3. View cluster status
-docker compose ps
-
-# 4. View real-time distributed logs
-docker compose logs -f ledger-service ai-fraud-service api-gateway
-```
+### Known Limitations
+- **PGVector Semantic Similarity Search:** Audit logs persist in PostgreSQL 16 (`pgvector/pgvector:pg16` image is provisioned), while vector embedding generation for cross-transaction AML clustering remains unimplemented.
+- **Vercel Preview Subdomains:** Keycloak 24 rejects middle-of-host wildcards (`https://*.vercel.app/*`); production origins must be registered explicitly via [`register-vercel-redirect.sh`](infra/oci/register-vercel-redirect.sh).
+- **Cloud Provisioning:** [`infra/terraform/`](infra/terraform/) and [`docker-compose.oci.yml`](docker-compose.oci.yml) are validated locally (`terraform`/`docker compose config`) and await your live OCI account & Vercel project deployment.
 
 ---
 
-## 7. Sprint Roadmap
+## 7. Architecture Decision Records (ADRs)
 
-- [x] **Phase 0: Housekeeping**: Clean repository hygiene, `.gitignore` updates, `DEVELOPMENT.md` guide, and agile roadmap backlog.
-- [x] **Phase 1: Foundation & Reliability Core**:
-  - [x] Transactional Outbox pattern with `SELECT ... FOR UPDATE SKIP LOCKED` and synchronous dispatch.
-  - [x] Deterministic batch lock ordering via `findAllByIdsWithPessimisticLock` eliminating deadlocks.
-  - [x] Testcontainers concurrency test suite (opposing transfers, random pairs, race idempotency, race funds).
-  - [x] Secret removal from source and YAML configurations; clean `.env` injection.
-  - [x] Dual AI fraud engine with strict JSON schema parsing and heuristic rule fallback.
-  - [x] Flyway migrations across all services (`ledger-service` V1-V3, `ai-fraud-service` V1-V2).
-  - [x] Idempotent Kafka consumer with `processed_events` deduplication store.
-  - [x] Comprehensive documentation and architecture truth pass.
-- [x] **Phase 2: Authentication & Authorization**: Keycloak OAuth2 / OIDC PKCE resource server on API Gateway with tenant account ownership (`owner_id`) checks.
-- [x] **Phase 3: High-Performance Caching**: Redis idempotency caching and account-balance read-through caching with post-commit eviction.
-- [x] **Phase 4: Real-Time Notifications**: WebSocket/STOMP push service consuming Kafka events with Redis fan-out.
-- [x] **Phase 5: Advanced Resilience**: Kafka consumer retry with Dead-Letter Topic (`.DLT`) for poison messages and Micrometer metrics.
-- [x] **Phase 6: Full-Stack Observability**: Prometheus metrics, Grafana dashboards, OpenTelemetry/Tempo distributed tracing, and structured JSON logging.
-- [x] **Phase 7: Load Testing**: Automated k6 performance benchmarks under high contention ([`BENCHMARKS.md`](docs/benchmarks/BENCHMARKS.md)).
-- [x] **Phase 8: Frontend Dashboard**: Standalone Angular 22 client (`frontend/`) served at `http://localhost:8080` with Keycloak PKCE login, reactive transfer form, live STOMP feed, and fraud audit console.
-- [ ] **Phase 9: Production Release**: AWS Terraform infrastructure, CI/CD deployment pipeline, and `v1.0.0` release.
+- [`ADR-001`](docs/adr/ADR-001-virtual-threads-architecture.md) — Java 21 Virtual Threads Across Microservices
+- [`ADR-002`](docs/adr/ADR-002-deterministic-pessimistic-locking.md) — Deadlock-Free Deterministic Ascending Pessimistic Locking
+- [`ADR-003`](docs/adr/ADR-003-transactional-outbox-event-streaming.md) — Transactional Outbox Pattern with `SKIP LOCKED`
+- [`ADR-004`](docs/adr/ADR-004-gateway-resilience-circuit-breakers.md) — Reactive API Gateway Resilience4j Circuit Breakers & Bulkheads
+- [`ADR-005`](docs/adr/ADR-005-keycloak-oauth2-resource-server.md) — Keycloak OAuth2 / OIDC PKCE & Tenant Ownership Isolation
+- [`ADR-006`](docs/adr/ADR-006-redis-caching-idempotency.md) — Redis Read-Through Caching & Distributed `SET NX` Locks
+- [`ADR-007`](docs/adr/ADR-007-realtime-websocket-stomp-redis-fanout.md) — Real-Time STOMP WebSockets & Redis Pub/Sub Fan-Out
+- [`ADR-008`](docs/adr/ADR-008-full-stack-observability-prometheus-otel.md) — Full-Stack Observability (Prometheus, Grafana Tempo, OTel & JSON Logs)
+
+---
+
+## 8. Running Tests
+
+```bash
+# Full backend unit + Testcontainers integration suite (requires Docker)
+./mvnw clean test --batch-mode
+
+# Angular unit tests (Vitest) + production build
+cd frontend && npm ci && npm test -- --watch=false && npm run build
+```
+
+Licensed under the [MIT License](LICENSE). Contributions welcome—see [`CONTRIBUTING.md`](CONTRIBUTING.md).
