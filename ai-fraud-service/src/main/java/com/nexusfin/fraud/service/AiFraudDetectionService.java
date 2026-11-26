@@ -25,8 +25,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Enterprise AI-Powered Fraud and Anti-Money Laundering (AML) Intelligence Pipeline.
- * Integrates Spring AI / OpenAI with resilient heuristic fallback.
+ * LLM transaction risk-scoring service.
+ * Integrates Spring AI / OpenAI with deterministic heuristic fallback.
  */
 @Service
 @RequiredArgsConstructor
@@ -59,7 +59,7 @@ public class AiFraudDetectionService {
                 response = evaluateWithHeuristics(request);
             }
         } else {
-            log.debug("Spring AI ChatClient not configured with production key. Utilizing enterprise heuristic engine.");
+            log.debug("Spring AI ChatClient not configured with non-placeholder key. Using heuristic fallback engine.");
             response = evaluateWithHeuristics(request);
         }
 

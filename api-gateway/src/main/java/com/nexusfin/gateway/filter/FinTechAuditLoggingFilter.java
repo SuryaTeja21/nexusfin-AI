@@ -11,7 +11,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * Enterprise Audit Logging Filter for all incoming financial Gateway requests.
+ * Audit logging filter for incoming financial Gateway requests.
  * Records request method, path, remote client address, and processing latency.
  */
 @Component

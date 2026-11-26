@@ -16,7 +16,7 @@
     <packaging>pom</packaging>
 
     <name>nexusfin-ai</name>
-    <description>NexusFin AI - Enterprise Financial Ledger and AI Intelligence Platform</description>
+    <description>NexusFin AI - Event-driven financial ledger and fraud-scoring platform</description>
 
     <modules>
         <module>discovery-server</module>

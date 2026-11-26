@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
- * Enterprise API Gateway for NexusFin AI Platform.
+ * Reactive API Gateway for the NexusFin AI platform.
  * Routes traffic, injects correlation tokens, and provides perimeter security.
  */
 @SpringBootApplication
