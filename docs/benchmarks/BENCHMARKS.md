@@ -16,7 +16,7 @@
 ### Microservice & Infrastructure Configuration
 - **Java Runtime:** Eclipse Temurin OpenJDK `21.0.13` LTS, Generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`), **Virtual Threads enabled** (`spring.threads.virtual.enabled: true`) across all services
 - **JVM Heap Caps (`docker-compose.yml`):**
-  - `api-gateway`: `-Xms64m -Xmx256m` (Spring Cloud Gateway WebFlux + Resilience4j Circuit Breaker / Bulkhead `max-concurrent-calls: 50`)
+  - `api-gateway`: `-Xms64m -Xmx256m` (Spring Cloud Gateway WebFlux + Resilience4j Circuit Breaker / 5s TimeLimiter; `Bulkhead max-concurrent-calls: 50` defined in YAML defaults, not attached to routes)
   - `ledger-service`: `-Xms64m -Xmx384m`
   - `ai-fraud-service`: `-Xms64m -Xmx256m`
   - `notification-service`: `-Xms64m -Xmx256m`

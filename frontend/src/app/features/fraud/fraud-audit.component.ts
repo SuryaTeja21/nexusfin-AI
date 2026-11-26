@@ -37,7 +37,7 @@ import { ToastService } from '../../core/services/toast.service';
     </div>
 
     <section class="card section-gap">
-      <h2>Fraud Audit Log (Latest 50)</h2>
+      <h2>Fraud Audit Log (Latest 20)</h2>
       @if (auditLogs().length === 0) {
         <p class="muted">No fraud decisions logged yet. Submit a transfer to trigger asynchronous AI scoring.</p>
       } @else {

@@ -15,15 +15,15 @@ In a distributed financial platform handling real-time double-entry ledgers, AI 
 * Strictly enforce idempotency: **never blind-retry non-idempotent operations**.
 * Guarantee that poison pills are quarantined immediately to a Dead-Letter Topic without blocking subsequent valid events.
 * Provide administrative visibility and manual replay capabilities for quarantined events.
-* Isolate thread pools and request concurrency via bulkheads and circuit breakers.
+* Isolate downstream failures via circuit breakers, timeouts, and fail-fast backpressure.
 
 ## Decision Outcome
 We implemented a multi-layered resilience architecture across API Gateway and Kafka consumers:
 
 ### 1. API Gateway Edge Resilience
-* **Resilience4j Reactive Circuit Breakers**: Attached to `/api/v1/accounts/**`, `/api/v1/ledger/**`, and `/api/v1/fraud/**` routes with a 50% failure threshold and 10-second open-state timeout. Degraded traffic forwards to `/fallback/ledger` or `/fallback/fraud` returning RFC 7807 Problem Details.
+* **Resilience4j Reactive Circuit Breakers & TimeLimiter**: Attached to `/api/v1/accounts/**`, `/api/v1/ledger/**`, and `/api/v1/fraud/**` routes with a 50% failure threshold, 10-second open-state wait duration, and 5-second execution timeout (`TimeLimiter`). Degraded traffic forwards to `/fallback/ledger` or `/fallback/fraud` returning RFC 7807 Problem Details.
 * **Idempotent-Only Gateway Retries**: Configured Spring Cloud Gateway `Retry` filter strictly for HTTP `GET` methods (3 retries, exponential backoff: 50ms initial, 500ms max, multiplier 2.0). **`POST`, `PUT`, and `DELETE` methods are explicitly excluded from automatic gateway retries**.
-* **Resilience4j Bulkhead & TimeLimiter**: Configured semaphore-based concurrency limits (50 concurrent calls on ledger, 30 on fraud) and 5-second execution timeouts.
+* **Resilience4j Bulkhead Configuration (Unwired Default)**: [`api-gateway/src/main/resources/application.yml`](../../api-gateway/src/main/resources/application.yml) defines `resilience4j.bulkhead` settings (`max-concurrent-calls: 50`, `max-wait-duration: 20ms`, instances `ledgerBulkhead` and `fraudBulkhead`), though they are not attached to Gateway route filters in the current codebase.
 
 ### 2. Kafka Consumer Resilience & Dead-Letter Topic (DLT) Quarantine
 * **`DefaultErrorHandler` with `DeadLetterPublishingRecoverer`**: Configured in both `ai-fraud-service` and `notification-service`.

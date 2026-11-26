@@ -49,7 +49,7 @@ This backlog mirrors the implementation phases defined in `docs/IMPROVEMENT_PLAN
 ## Phase 5: Resilience & Failure Handling
 - [x] **#5.1**: Implement Kafka consumer retry with Dead-Letter Topic (`.DLT`) for poison messages.
 - [x] **#5.2**: Provide admin visibility and Micrometer metrics for DLT backlog.
-- [x] **#5.3**: Configure Resilience4j retries and bulkheads for idempotent operations.
+- [x] **#5.3**: Configure Resilience4j GET-only retries and circuit breakers/timeouts (bulkhead YAML defaults defined; route wiring deferred).
 - [x] **#5.4**: Add fault-injection tests verifying poison message quarantine.
 
 ---

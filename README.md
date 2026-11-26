@@ -88,7 +88,7 @@ See [`docs/DEPLOYMENT_OCI_VERCEL.md`](docs/DEPLOYMENT_OCI_VERCEL.md) if you want
 | **Observability Stack** | **Implemented** | Prometheus `/actuator/prometheus`, OpenTelemetry OTLP to Grafana Tempo, JSON logs (`traceId`, `spanId`, `X-Correlation-Id`), provisioned Grafana dashboards. |
 | **k6 Load Test Suite** | **Implemented** | Automated `k6` scripts (`perf/`) covering unique, opposing hot-pair, 80/20 mixed, and idempotency replay workloads. |
 | **Angular 22 Dashboard** | **Implemented** | Standalone UI (`frontend/`) behind Gateway or Vercel with PKCE login, Accounts drilldown, Transfer UUID protection, Live STOMP feed, Fraud Console. |
-| **OCI ARM64 IaC & GHCR CD** | **Implemented** | Terraform for Oracle Always Free `VM.Standard.A1.Flex`, Caddy TLS overlay, Vercel config script, multi-arch GHCR release pipeline. |
+| **OCI ARM64 IaC & GHCR CD** | **Defined (Unapplied)** | Terraform templates for OCI `VM.Standard.A1.Flex`, Caddy TLS overlay (`docker-compose.oci.yml`), Vercel runtime config, and multi-arch GHCR release workflow (awaiting live OCI/tag trigger). |
 
 ---
 
@@ -136,17 +136,26 @@ nexusfin-ai/
 
 ---
 
-## 6. Security Model & Known Limitations
+## 6. Security Notes, Model & Known Limitations
+
+### Security Notes (Local Dev vs. Production)
+- **Dev-Only Credentials in Repo:** Local sandbox setups intentionally include fixed dev defaults so `docker compose up -d` and CI work immediately:
+  - [`infra/keycloak/nexusfin-realm.json`](infra/keycloak/nexusfin-realm.json): `nexusfin-service-secret`, `customer1` / `customer_password`, `admin1` / `admin_password`.
+  - [`docker-compose.yml`](docker-compose.yml): `nexusfin_secret`, Keycloak `admin`/`admin`, and `dummy-key` placeholder defaults (marked `# local dev only`).
+  - [`login.component.ts`](frontend/src/app/features/login/login.component.ts) and [`perf/lib/common.js`](perf/lib/common.js): display or default to those local demo credentials.
+- **Replace All Defaults Outside Local Dev:** Use [`docker-compose.oci.yml`](docker-compose.oci.yml) / [`.env.oci.example`](.env.oci.example) (which require explicit non-default credentials), keep `.env`, `.env.oci`, `terraform.tfvars`, and private keys (`*.pem`, `*.key`) outside Git, and see [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
 ### Security Model
-- **Zero-Trust JWT Defense-in-Depth:** Both `api-gateway` (WebFlux reactive resource server) and downstream services (`ledger-service`, `notification-service`) cryptographically verify Keycloak RSA signatures against `jwk-set-uri` while permitting both browser PKCE issuers and internal Docker issuers.
+- **Zero-Trust JWT Defense-in-Depth:** Both `api-gateway` (WebFlux reactive resource server) and downstream services (`ledger-service`, `notification-service`) cryptographically verify Keycloak RSA signatures against `jwk-set-uri` while permitting both browser PKCE issuers and internal Docker issuers. (`ai-fraud-service` currently relies on `api-gateway` perimeter authorization rather than its own Spring Security OAuth2 resource server.)
 - **Role-Based Access Control (RBAC):** `CUSTOMER` users can query only accounts matching their JWT `sub`/`owner_id` and submit transfers from owned accounts; `ADMIN` users have global visibility, account provisioning (`POST /api/v1/accounts`), `/topic/transactions`, fraud audit logs (`/api/v1/fraud/audit-logs`), and `.DLT` replay controls.
 - **No Blind Mutation Retries:** Gateway Resilience4j retry filters explicitly apply only to idempotent `GET` endpoints—never `POST` transfers.
 
 ### Known Limitations
+- **Gateway Bulkhead Not Wired to Routes:** [`api-gateway/src/main/resources/application.yml`](api-gateway/src/main/resources/application.yml) defines `resilience4j.bulkhead` settings (`ledgerBulkhead`, `fraudBulkhead`), while active gateway route filters use `CircuitBreaker`, `TimeLimiter`, and `GET`-only `Retry`.
 - **PGVector Semantic Similarity Search:** Audit logs persist in PostgreSQL 16 (`pgvector/pgvector:pg16` image is provisioned), while vector embedding generation for cross-transaction AML clustering remains unimplemented.
-- **Vercel Preview Subdomains:** Keycloak 24 rejects middle-of-host wildcards (`https://*.vercel.app/*`); production origins must be registered explicitly via [`register-vercel-redirect.sh`](infra/oci/register-vercel-redirect.sh).
-- **Cloud Provisioning:** [`infra/terraform/`](infra/terraform/) and [`docker-compose.oci.yml`](docker-compose.oci.yml) are validated locally (`terraform`/`docker compose config`) and await your live OCI account & Vercel project deployment.
+- **In-Memory `.DLT` UI Backlog & SimpleBroker:** `DltMessageStore` in `ai-fraud-service` keeps up to `1,000` quarantined records in memory; `notification-service` uses Spring in-memory `SimpleBroker` without offline event replay or consumer deduplication.
+- **Vercel Interactive Sandbox Mode:** The hosted Vercel frontend ([`nexusfin-ai-nine.vercel.app`](https://nexusfin-ai-nine.vercel.app)) defaults to an in-browser simulation when no live gateway URL is configured; full microservices require Docker Compose.
+- **Unapplied Cloud IaC / CD Tag:** `docker-compose.oci.yml` passed `docker compose config -q`, while [`infra/terraform/`](infra/terraform/) has not been run through `terraform validate`/`apply` (`terraform` CLI not installed locally) and `.github/workflows/cd.yml` has not yet been triggered via a `v*` tag.
 
 ---
 
@@ -155,7 +164,7 @@ nexusfin-ai/
 - [`ADR-001`](docs/adr/ADR-001-virtual-threads-architecture.md) — Java 21 Virtual Threads Across Microservices
 - [`ADR-002`](docs/adr/ADR-002-deterministic-pessimistic-locking.md) — Deadlock-Free Deterministic Ascending Pessimistic Locking
 - [`ADR-003`](docs/adr/ADR-003-transactional-outbox-event-streaming.md) — Transactional Outbox Pattern with `SKIP LOCKED`
-- [`ADR-004`](docs/adr/ADR-004-gateway-resilience-circuit-breakers.md) — Reactive API Gateway Resilience4j Circuit Breakers & Bulkheads
+- [`ADR-004`](docs/adr/ADR-004-gateway-resilience-circuit-breakers.md) — Reactive API Gateway Resilience4j Circuit Breakers, TimeLimiters & Retries
 - [`ADR-005`](docs/adr/ADR-005-keycloak-oauth2-resource-server.md) — Keycloak OAuth2 / OIDC PKCE & Tenant Ownership Isolation
 - [`ADR-006`](docs/adr/ADR-006-redis-caching-idempotency.md) — Redis Read-Through Caching & Distributed `SET NX` Locks
 - [`ADR-007`](docs/adr/ADR-007-realtime-websocket-stomp-redis-fanout.md) — Real-Time STOMP WebSockets & Redis Pub/Sub Fan-Out

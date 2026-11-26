@@ -39,6 +39,12 @@ build/
 *.log
 *.pdf
 *.PDF
+*.pem
+*.key
+*.p12
+*.jks
+*.dump
+*.bak
 
 ### Terraform ###
 **/.terraform/*
