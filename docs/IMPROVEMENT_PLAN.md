@@ -228,13 +228,12 @@ Expose Micrometer counters `idempotency.cache.hit/miss`. Report real hit ratio f
    Classify non-retryable exceptions (deserialization, validation) to skip retries.
 2. **DLT visibility:** a small admin endpoint or consumer that lists DLT messages count; Micrometer metric
    `dlt.messages`. Optional replay endpoint (ADMIN only).
-3. **Resilience4j Retry + Bulkhead** where appropriate (gateway -> services for idempotent GETs only; never blind-retry
-   money-moving POSTs unless idempotency keys are required and enforced).
+3. **Resilience4j CircuitBreaker + TimeLimiter + GET-only Retry** where appropriate (gateway -> services for idempotent `GET`s only; never blind-retry money-moving `POST`s unless idempotency keys are required and enforced). `resilience4j.bulkhead` settings exist in `api-gateway/src/main/resources/application.yml` (`ledgerBulkhead`, `fraudBulkhead`) as an unwired configuration and are not currently attached to any gateway route.
 4. **Test:** poison message (malformed JSON) ends in the DLT after N attempts and the consumer keeps processing
    later messages; transient failure succeeds on retry.
 5. Update ADR-004 and README with the failure-handling matrix.
 
-**Acceptance:** You can now claim DLQ/DLT, retry policies, circuit breakers, and bulkheads truthfully.
+**Acceptance:** You can now claim DLQ/DLT, `GET`-only retry policies, 5s time limiters, and circuit breakers truthfully (Resilience4j bulkheads are configured in YAML only and are not yet wired to gateway routes).
 
 ---
 

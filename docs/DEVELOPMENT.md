@@ -10,7 +10,7 @@ This guide covers setting up your development environment, running tests, and la
 The repository includes a complete development container configuration in `.devcontainer/devcontainer.json`:
 - **Base image:** Debian Bookworm with OpenJDK 21 (`mcr.microsoft.com/devcontainers/java:1-21-bookworm`)
 - **Pre-installed tools:** JDK 21, Docker-in-Docker / Buildx, Maven wrapper
-- **Automated setup:** Runs `chmod +x mvnw` on container creation and forwards all microservice ports (8080, 8081, 8082, 8761, 9092).
+- **Automated setup:** Runs `chmod +x mvnw` on container creation and forwards core service ports in `.devcontainer/devcontainer.json` (`8080`, `8081`, `8082`, `8761`, `9092`; add `8083`/`8084` manually if running Keycloak or `notification-service` inside Dev Containers).
 
 ### Option B: Local Environment
 If developing directly on your host machine:
@@ -21,7 +21,7 @@ If developing directly on your host machine:
    - Verify: `java -version` (must report version 21.x)
 2. **Docker & Docker Compose:**
    - Docker Desktop or OrbStack with Docker Compose v2.
-   - Required for Testcontainers (real PostgreSQL 16 & Kafka 3.7) during integration tests and for running the local stack.
+   - Required for Testcontainers (PostgreSQL 16, Apache Kafka 3.7, Redis 7) during integration tests and for running the local stack.
    - Verify: `docker --version && docker compose version`
 
 ---
@@ -39,29 +39,31 @@ Ensure placeholders in `.env` are set appropriately for your local environment. 
 
 ## 3. Building and Running Tests
 
-The project is structured as a Maven multi-module repository with 4 core services:
-- `discovery-server` (Netflix Eureka Server)
-- `api-gateway` (Spring Cloud Gateway WebFlux)
-- `ledger-service` (Spring Boot + PostgreSQL + Kafka Outbox)
-- `ai-fraud-service` (Spring Boot + Kafka Consumer + Spring AI)
+The project is structured as a Maven multi-module repository with 5 Spring Boot modules (plus the `frontend/` Angular 22 SPA):
+- `discovery-server` (Netflix Eureka Server, `:8761`)
+- `api-gateway` (Spring Cloud Gateway WebFlux, `:8080`)
+- `ledger-service` (Spring Boot + PostgreSQL + Kafka Outbox + Redis, `:8081`)
+- `ai-fraud-service` (Spring Boot + Kafka Consumer + Spring AI, `:8082`)
+- `notification-service` (Spring Boot + STOMP WebSocket + Redis Pub/Sub, `:8084`)
 
-### Run Unit Tests
+### Run Tests
+Surefire in the parent `pom.xml` includes `*Test.java`, `*Tests.java`, and `*IT.java`, so full module runs require Docker for Testcontainers:
 ```bash
 ./mvnw clean test
 ```
 
-To run unit tests for a specific module:
+To run tests for a specific module:
 ```bash
 ./mvnw test -pl ledger-service
 ```
 
-### Run Integration Tests (Testcontainers)
+### Run Full Maven Verification (Including Packaging)
 Requires Docker running on the host or in Dev Container:
 ```bash
 ./mvnw verify
 ```
 
-To run integration tests for a specific module:
+To verify a specific module:
 ```bash
 ./mvnw verify -pl ledger-service
 ```
@@ -70,9 +72,9 @@ To run integration tests for a specific module:
 
 ## 4. Running the Full Stack Locally
 
-### 1. Start Infrastructure (PostgreSQL & Kafka)
+### 1. Start Infrastructure (PostgreSQL, Kafka, Redis, Keycloak)
 ```bash
-docker compose up -d postgres kafka
+docker compose up -d postgres-ledger postgres-vector kafka redis keycloak
 ```
 
 ### 2. Launch Services in Sequence
@@ -102,6 +104,12 @@ Start services in the following order:
    ```
    *Port:* http://localhost:8082
 
+5. **Notification Service:**
+   ```bash
+   ./mvnw spring-boot:run -pl notification-service
+   ```
+   *Port:* http://localhost:8084
+
 ### Or Launch Entire Stack via Docker Compose
 ```bash
 docker compose up --build -d
@@ -115,6 +123,7 @@ docker compose up --build -d
 - **Gateway Health:** `curl http://localhost:8080/actuator/health`
 - **Ledger Health:** `curl http://localhost:8081/actuator/health`
 - **Fraud Service Health:** `curl http://localhost:8082/actuator/health`
+- **Notification Service Health:** `curl http://localhost:8084/actuator/health`
 
 ---
 
