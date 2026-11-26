@@ -151,11 +151,12 @@ nexusfin-ai/
 - **No Blind Mutation Retries:** Gateway Resilience4j retry filters explicitly apply only to idempotent `GET` endpoints—never `POST` transfers.
 
 ### Known Limitations
+- **`ai-fraud-service` Perimeter Auth Only:** `ai-fraud-service` has no Spring Security OAuth2 resource server of its own; it relies on Gateway `ADMIN`/`SERVICE` checks and internal network isolation, so do not expose port `8082` publicly.
 - **Gateway Bulkhead Not Wired to Routes:** [`api-gateway/src/main/resources/application.yml`](api-gateway/src/main/resources/application.yml) defines `resilience4j.bulkhead` settings (`ledgerBulkhead`, `fraudBulkhead`), while active gateway route filters use `CircuitBreaker`, `TimeLimiter`, and `GET`-only `Retry`.
 - **PGVector Semantic Similarity Search:** Audit logs persist in PostgreSQL 16 (`pgvector/pgvector:pg16` image is provisioned), while vector embedding generation for cross-transaction AML clustering remains unimplemented.
-- **In-Memory `.DLT` UI Backlog & SimpleBroker:** `DltMessageStore` in `ai-fraud-service` keeps up to `1,000` quarantined records in memory; `notification-service` uses Spring in-memory `SimpleBroker` without offline event replay or consumer deduplication.
-- **Vercel Interactive Sandbox Mode:** The hosted Vercel frontend ([`nexusfin-ai-nine.vercel.app`](https://nexusfin-ai-nine.vercel.app)) defaults to an in-browser simulation when no live gateway URL is configured; full microservices require Docker Compose.
-- **Unapplied Cloud IaC / CD Tag:** `docker-compose.oci.yml` passed `docker compose config -q`, while [`infra/terraform/`](infra/terraform/) has not been run through `terraform validate`/`apply` (`terraform` CLI not installed locally) and `.github/workflows/cd.yml` has not yet been triggered via a `v*` tag.
+- **In-Memory `.DLT` UI Backlog & SimpleBroker:** `DltMessageStore` in `ai-fraud-service` keeps at most `1,000` quarantined records in memory (a service restart clears it); `notification-service` delivers Kafka events at-least-once with no consumer dedup and uses Spring in-memory `SimpleBroker` without replay on reconnect.
+- **Vercel Interactive Sandbox Mode:** The hosted Vercel frontend ([`nexusfin-ai-nine.vercel.app`](https://nexusfin-ai-nine.vercel.app)) defaults to an in-browser simulation when no live gateway URL is configured; the real microservices stack runs via Docker Compose.
+- **Cloud Provisioning & Unapplied CD:** [`infra/terraform/`](infra/terraform/) and [`docker-compose.oci.yml`](docker-compose.oci.yml) provide an OCI ARM64 deployment path (`docker compose config -q` validated; `terraform` has not yet been validated/applied to a live OCI account), and `.github/workflows/cd.yml` has not yet been triggered via a `v*` tag.
 
 ---
 
